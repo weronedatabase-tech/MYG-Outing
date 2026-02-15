@@ -2,304 +2,1100 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MINDS MYG Outings</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fundraising Shop</title>
     
-    <!-- PWA Manifest & Icons -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="icon-192.png">
-
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: { 900: '#111827', 800: '#1f2937', 700: '#374151' }
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    
     <style>
-     ::-webkit-scrollbar { width: 8px; }
-     ::-webkit-scrollbar-track { background: #1e293b; }
-     ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-     .loader { border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
-     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-     .fade-in { animation: fadeIn 0.3s ease-in-out; }
-     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-     .search-results { max-height: 250px; overflow-y: auto; }
-     .modal-content { max-height: 80vh; }
-     body { -webkit-tap-highlight-color: transparent; }
-   </style>
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        html.dark body { background-color: #111827; color: white; }
+        
+        .handle { touch-action: none; }
+        
+        /* Editor Styles */
+        .editor-toolbar { display: flex; align-items: center; gap: 4px; }
+        .editor-toolbar button, .editor-toolbar label { 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            border: 1px solid #ccc; 
+            background: #fff; 
+            color: #333; 
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            min-width: 32px;
+        }
+        .editor-toolbar button:hover, .editor-toolbar label:hover { background: #eee; }
+        .editor-content { min-height: 150px; overflow-y: auto; }
+        
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            cursor: pointer;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; }
+
+        #displayBanner { max-height: 200px; width: 100%; object-fit: cover; }
+    </style>
 </head>
-<body class="bg-slate-900 min-h-screen font-sans text-slate-200 pb-20">
+<body class="bg-gray-50 text-gray-800 font-sans pb-20 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-300">
 
-   <!-- CONFIGURATION -->
-   <script>
-     // ============================================
-     // 🔴 ENVIRONMENT CONFIGURATION
-     // ============================================
-     const IS_DEV = true; // Set to false for Production
-     
-     const URLS = {
-         DEV: "https://script.google.com/macros/s/AKfycbywS4uXR4G_S-Xqvqrkohckp76SEzp78dIyOLwBp6a5pLtHjUxwGjDyo4grEsHxerta/exec",
-         PROD: "https://script.google.com/macros/s/AKfycbwOQHiPXoVB10_T81K1mfWPZyahHFXHnrbR7KuM4GI0tQjnsaGjQMunDJWcXRP5g0aENQ/exec"
-     };
-     
-     const API_URL = IS_DEV ? URLS.DEV : URLS.PROD;
-   </script>
+<script>
+    // ⚠️ DEPLOYED WEB APP URL
+    const API_URL = "https://script.google.com/macros/s/AKfycbxpgGDFHHhENaWSd50Vm70C5kioPu9nba89QDN4dJ8W-JsHsQfMZNJpIH_YqnlwROmf/exec"; 
+    
+    function initTheme() {
+        try {
+            if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        } catch(e) { console.log("Theme init error", e); }
+    }
+    
+    function toggleDarkMode() {
+        try {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                localStorage.theme = 'light';
+            } else {
+                html.classList.add('dark');
+                localStorage.theme = 'dark';
+            }
+        } catch(e) { alert("Error toggling theme"); }
+    }
+    initTheme();
+</script>
 
-   <!-- STICKY HEADER -->
-   <div class="sticky top-0 z-50 shadow-lg">
-     <div id="dev-bar" class="hidden bg-red-600 text-white text-center text-xs font-bold py-1 border-b border-red-800">DEV MODE</div>
-     <nav class="bg-slate-800/90 backdrop-blur-md border-b border-slate-700">
-       <div class="container mx-auto px-4 py-4 flex items-center justify-between">
-         <div class="flex items-center gap-3 cursor-pointer" onclick="showView('landing')">
-           <div class="bg-blue-600 p-2 rounded-lg shadow-lg shadow-blue-500/20">
-             <i class="fa-solid fa-calendar-days text-white text-xl"></i>
-           </div>
-           <div>
-             <h1 class="text-lg font-bold text-white leading-tight">MINDS MYG</h1>
-             <p class="text-xs text-slate-400">Outings Organiser</p>
-           </div>
-         </div>
-         <div class="flex items-center gap-4">
-             <button onclick="refreshApp()" class="text-slate-400 hover:text-white text-sm transition-colors group" title="Force Refresh Data">
-                 <i id="refreshIcon" class="fa-solid fa-arrows-rotate group-hover:text-blue-400"></i>
-                 <span class="hidden sm:inline ml-1">Refresh</span>
-             </button>
-             <div class="h-4 w-px bg-slate-700"></div>
-             <button onclick="showView('landing')" class="text-slate-400 hover:text-white text-sm transition-colors">
-                 <i class="fa-solid fa-house"></i>
-                 <span class="hidden sm:inline ml-1">Home</span>
-             </button>
-         </div>
-       </div>
-     </nav>
-   </div>
+<div id="loadingOverlay" class="fixed inset-0 bg-white/90 dark:bg-gray-900/90 z-50 flex flex-col items-center justify-center hidden">
+    <div class="loader"></div>
+    <p id="loadingText" class="mt-4 font-semibold text-blue-600 animate-pulse">Processing...</p>
+</div>
 
-   <!-- MAIN CONTENT CONTAINER -->
-   <main class="container mx-auto p-4 mt-4 max-w-xl">
-     
-     <!-- VIEW: LANDING -->
-     <div id="view-landing" class="fade-in space-y-4">
-       <h2 class="text-xl font-bold text-center text-white mb-6">Select Profile</h2>
-       <div onclick="requestAccess('comm')" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-blue-500/50 rounded-2xl p-6 cursor-pointer transition-all shadow-lg flex items-center gap-4 group">
-         <div class="bg-blue-900/50 p-4 rounded-xl text-blue-400 group-hover:scale-110 transition-transform"><i class="fa-solid fa-user-tie text-2xl"></i></div>
-         <div><h3 class="text-lg font-bold text-white">Comm Profile</h3><p class="text-sm text-slate-400">Create outings & scrub data <i class="fa-solid fa-lock text-xs ml-1 opacity-50"></i></p></div>
-       </div>
-       <div onclick="showView('volunteer')" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-green-500/50 rounded-2xl p-6 cursor-pointer transition-all shadow-lg flex items-center gap-4 group">
-         <div class="bg-green-900/50 p-4 rounded-xl text-green-400 group-hover:scale-110 transition-transform"><i class="fa-solid fa-users text-2xl"></i></div>
-         <div><h3 class="text-lg font-bold text-white">Volunteer & Trainee</h3><p class="text-sm text-slate-400">Update attendance</p></div>
-       </div>
-       <div onclick="requestAccess('settings')" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-purple-500/50 rounded-2xl p-6 cursor-pointer transition-all shadow-lg flex items-center gap-4 group">
-         <div class="bg-purple-900/50 p-4 rounded-xl text-purple-400 group-hover:scale-110 transition-transform"><i class="fa-solid fa-sliders text-2xl"></i></div>
-         <div><h3 class="text-lg font-bold text-white">Settings</h3><p class="text-sm text-slate-400">Configure attendance fields <i class="fa-solid fa-lock text-xs ml-1 opacity-50"></i></p></div>
-       </div>
-     </div>
-
-     <!-- VIEW: COMM -->
-     <div id="view-comm" class="hidden fade-in space-y-6">
-       <div class="flex items-center gap-2 mb-2"><button onclick="showView('landing')" class="text-slate-500 hover:text-white"><i class="fa-solid fa-arrow-left"></i> Back</button><h2 class="text-xl font-bold text-blue-400">Comm Dashboard</h2></div>
-       <div id="commGlobalStatus" class="hidden mb-4 p-3 rounded-lg text-sm text-center"></div>
-       <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
-          <h3 class="font-bold text-white mb-2"><i class="fa-solid fa-folder-plus text-blue-500 mr-2"></i>Create New Outing</h3>
-          <button onclick="openModal()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg transition-all text-sm">Create Outing</button>
-       </div>
-       <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
-          <h3 class="font-bold text-white mb-2"><i class="fa-solid fa-user-group text-teal-500 mr-2"></i>Auto Pairing and Grouping</h3>
-          <div class="relative mb-3">
-            <label class="text-[10px] text-slate-400 uppercase font-bold mb-1 block flex items-center gap-1">Select Event <span id="commSheetLoading" class="hidden"><i class="fa-solid fa-circle-notch fa-spin text-teal-500"></i></span></label>
-            <select id="commSheetSelector" class="w-full bg-slate-900 border border-slate-600 rounded-lg py-2 px-3 text-sm focus:border-teal-500 outline-none text-white"><option disabled selected>Loading...</option></select>
-          </div>
-          <div class="flex gap-2 mt-3">
-             <button id="pairBtn" onclick="handlePair()" class="flex-1 bg-slate-700 hover:bg-teal-600 hover:text-white text-teal-400 border border-teal-500/30 font-bold py-3 rounded-xl transition-all text-sm">Pair Now</button>
-             <button id="groupBtn" onclick="handleGroup()" class="flex-1 bg-slate-700 hover:bg-purple-600 hover:text-white text-purple-400 border border-purple-500/30 font-bold py-3 rounded-xl transition-all text-sm">Group Now</button>
-          </div>
-          <div id="scrubStatus" class="hidden mt-4 p-3 bg-slate-900 rounded-xl text-xs whitespace-pre-wrap font-mono border border-slate-700"></div>
-       </div>
-       <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
-          <h3 class="font-bold text-white mb-3"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i>Upcoming Outings</h3>
-          <div id="upcomingList" class="space-y-4 text-sm text-slate-400"><p class="text-xs italic"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading events...</p></div>
-       </div>
-     </div>
-
-     <!-- VIEW: VOLUNTEER -->
-     <div id="view-volunteer" class="hidden fade-in space-y-6">
-       <div class="flex items-center gap-2 mb-2"><button onclick="showView('landing')" class="text-slate-500 hover:text-white"><i class="fa-solid fa-arrow-left"></i> Back</button><h2 class="text-xl font-bold text-green-400">Attendance Update</h2></div>
-       <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-4">
-           <div class="relative"><label class="text-xs font-bold text-green-400 uppercase flex items-center gap-2">1. Select Upcoming Event <span id="volSheetLoading" class="hidden"><i class="fa-solid fa-spinner fa-spin"></i></span></label><div class="relative mt-1"><select id="volSheetSelector" class="w-full mt-1 bg-slate-900 border border-slate-600 rounded-lg py-3 px-3 text-sm text-white focus:border-green-500 outline-none appearance-none" onchange="resetVolForm()"><option disabled selected>Loading...</option></select><div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-slate-500"><i class="fa-solid fa-chevron-down"></i></div><div id="volSheetSpinner" class="absolute right-8 top-3 hidden pointer-events-none text-green-500"><i class="fa-solid fa-circle-notch fa-spin"></i></div></div></div>
-           <div><label class="text-xs font-bold text-green-400 uppercase">2. Select Type</label><div class="flex gap-2 mt-1"><button type="button" onclick="setVolType('trainee', this)" class="vol-type-btn flex-1 bg-slate-900 border border-slate-600 hover:border-green-500 py-3 rounded-lg text-sm transition-colors text-slate-300">Trainee</button><button type="button" onclick="setVolType('volunteer', this)" class="vol-type-btn flex-1 bg-slate-900 border border-slate-600 hover:border-green-500 py-3 rounded-lg text-sm transition-colors text-slate-300">Volunteer</button></div></div>
-           <div id="volNameSection" class="hidden"><label class="text-xs font-bold text-green-400 uppercase">3. Search / Select Name</label><div class="relative mt-1"><div class="relative"><div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none"><i class="fa-solid fa-magnifying-glass text-slate-500"></i></div><input type="text" id="volNameSearch" class="w-full bg-slate-900 border border-slate-600 rounded-lg py-3 pl-10 pr-10 text-sm text-white focus:border-green-500 outline-none placeholder-slate-500" placeholder="Type to search..." onfocus="autoScrollAndFocus(this)" oninput="filterNames()" autocomplete="off"><div id="nameLoader" class="absolute right-3 top-3 hidden"><div class="text-slate-400 text-xs"><i class="fa-solid fa-circle-notch fa-spin"></i></div></div><button onclick="clearSearch()" id="clearSearchBtn" class="absolute right-3 top-3 text-slate-500 hover:text-white hidden z-20"><i class="fa-solid fa-times"></i></button></div><ul id="volNameList" class="absolute z-50 w-full bg-slate-800 border-2 border-cyan-500 rounded-xl mt-2 shadow-[0_0_20px_rgba(6,182,212,0.3)] hidden max-h-60 overflow-y-auto"></ul></div><div id="addNewVolContainer" class="hidden mt-3 text-center"><button type="button" onclick="showAddNewForm()" class="text-sm text-green-400 hover:text-green-300 font-bold flex items-center justify-center gap-2 w-full py-2 bg-slate-700/50 rounded-lg border border-dashed border-green-500/30"><i class="fa-solid fa-user-plus"></i> ＋ Can't find your name above? Add yourself in here</button></div></div>
-       </div>
-       <div id="volFormContainer" class="hidden bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl"><h3 id="formTitle" class="font-bold text-white mb-4 border-b border-slate-700 pb-2">Update Details</h3><form id="attendanceForm" onsubmit="submitAttendance(event)" class="space-y-4"><div id="newVolProjectContainer" class="hidden mb-4 relative"><label class="block text-xs font-bold text-slate-400 mb-1">Project Group *</label><div class="relative"><input type="text" id="newVolProjectSearch" name="Project" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-sm text-white focus:border-green-500 outline-none" placeholder="Search Project..." onfocus="toggleProjectList(true)" oninput="filterProjects()" autocomplete="off"><ul id="projectList" class="absolute z-50 w-full bg-slate-800 border-2 border-cyan-500 rounded-xl mt-2 shadow-[0_0_20px_rgba(6,182,212,0.3)] hidden max-h-40 overflow-y-auto"></ul></div></div><div id="dynamicFields" class="grid grid-cols-1 gap-4"></div><div id="volFormStatus" class="hidden p-3 rounded-lg text-xs text-center"></div><button id="volSubmitBtn" type="submit" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl shadow-lg mt-4">Update Attendance</button></form></div>
-     </div>
-
-     <!-- VIEW: SETTINGS -->
-     <div id="view-settings" class="hidden fade-in space-y-6">
-       <div class="flex items-center gap-2 mb-2"><button onclick="showView('landing')" class="text-slate-500 hover:text-white"><i class="fa-solid fa-arrow-left"></i> Back</button><h2 class="text-xl font-bold text-purple-400">Field Configuration</h2></div><div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl"><p class="text-xs text-slate-400 mb-4">Select columns visible to volunteers (from Template).</p><div class="mb-2 text-right"><button onclick="loadSettings()" class="text-xs text-blue-400 hover:text-blue-300 underline">Refresh Configuration</button></div><div id="settingsLoader" class="hidden flex justify-center py-4"><div class="loader"></div></div><div id="settingsContent" class="hidden space-y-6"><div><h3 class="text-sm font-bold text-white bg-slate-700 p-2 rounded mb-2">Trainee Tab Columns</h3><div id="traineeColsContainer" class="grid grid-cols-2 gap-2 text-sm"></div></div><div><h3 class="text-sm font-bold text-white bg-slate-700 p-2 rounded mb-2">Volunteer Tab Columns</h3><div id="volColsContainer" class="grid grid-cols-2 gap-2 text-sm"></div></div><div id="settingsStatus" class="hidden p-3 rounded text-center text-xs"></div><button onclick="saveSettings()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl shadow-lg">Save Configuration</button></div></div>
-     </div>
-   </main>
-
-   <!-- REMINDER MESSAGE MODAL -->
-   <div id="reminderModal" class="fixed inset-0 bg-black/90 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
-     <div class="bg-slate-800 w-full max-w-lg rounded-2xl border border-slate-700 flex flex-col max-h-[90vh] shadow-2xl">
-        <div class="p-4 border-b border-slate-700 flex justify-between items-center">
-            <h3 class="text-white font-bold"><i class="fa-regular fa-message mr-2 text-blue-400"></i>Reminder Message</h3>
-            <button onclick="closeReminderModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+<header class="bg-blue-700 text-white py-2 px-4 shadow-md sticky top-0 z-40 dark:bg-blue-900">
+    <div class="flex justify-between items-center max-w-lg mx-auto">
+        <h1 class="font-bold text-lg cursor-pointer" onclick="router('home')" id="appTitleDisplay">Fundraising Drive</h1>
+        <div class="flex gap-4 items-center">
+            <button onclick="toggleDarkMode()" class="text-xl p-1 hover:text-blue-200 transition-transform hover:scale-110" title="Toggle Dark Mode">🌗</button>
+            <i class="fas fa-cog cursor-pointer hover:text-blue-200 mt-1" onclick="openAdminAuth()"></i>
+            <div class="relative cursor-pointer" onclick="router('cart')">
+                <i class="fas fa-shopping-cart text-xl"></i>
+                <span id="headerCartCount" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">0</span>
+            </div>
         </div>
-        <div class="p-4 flex-grow overflow-y-auto">
-            <p class="text-xs text-slate-400 mb-2">Copy this message to send to volunteers:</p>
-            <textarea id="modalReminderText" class="w-full h-64 bg-slate-900 border border-slate-600 rounded-lg p-3 text-sm text-slate-300 font-mono resize-none focus:border-blue-500 outline-none" readonly></textarea>
+    </div>
+</header>
+
+<main class="max-w-lg mx-auto min-h-screen relative">
+    
+    <!-- HOME -->
+    <section id="view-home" class="p-6 fade-in">
+        <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-6 dark:bg-gray-800 dark:shadow-none dark:border dark:border-gray-700">
+            <img id="displayBanner" src="" class="hidden w-full object-cover max-h-48">
+            <div class="p-6">
+                <h2 class="text-2xl font-bold text-blue-700 dark:text-blue-400 mb-4 text-center">Welcome!</h2>
+                <div id="displayIntro" class="prose text-gray-600 dark:text-gray-300 mb-6">Loading...</div>
+                <div id="shopStatusBanner" class="hidden mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-100 rounded text-center font-bold text-sm">Shop is Closed</div>
+                <button id="startShoppingBtn" onclick="router('shop')" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg dark:shadow-none">Start Shopping</button>
+            </div>
         </div>
-        <div class="p-4 border-t border-slate-700 flex justify-end gap-2">
-            <button onclick="closeReminderModal()" class="px-4 py-2 text-slate-300 hover:text-white text-sm font-bold">Close</button>
-            <button onclick="copyFromModal(this)" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold flex items-center gap-2">
-                <i class="fa-regular fa-copy"></i> Copy Message
-            </button>
+        <div class="text-center text-xs text-gray-400">Current Event: <span id="displayEventName">Loading...</span></div>
+    </section>
+
+    <!-- SHOP -->
+    <section id="view-shop" class="p-4 hidden fade-in">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold flex items-center gap-2"><i class="fas fa-store"></i> Items</h2>
+            <button onclick="router('home')" class="text-sm text-blue-600 dark:text-blue-400 font-semibold hover:underline"><i class="fas fa-arrow-left"></i> Home</button>
         </div>
-     </div>
-   </div>
+        <div id="shopClosedMsg" class="hidden bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-100 px-4 py-3 rounded relative mb-4 text-sm text-center font-bold">
+            The shop is currently closed. Ordering is unavailable.
+        </div>
+        <div id="productList" class="grid grid-cols-1 gap-4"></div>
+        <div class="mt-6 text-center">
+            <button id="shopViewCartBtn" onclick="router('cart')" class="bg-gray-800 text-white px-6 py-3 rounded-full font-bold shadow-lg text-sm w-full max-w-xs transition hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600">View Cart & Checkout ($0.00)</button>
+        </div>
+    </section>
 
-   <!-- CREATE OUTING MODAL -->
-   <div id="createModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden z-50 flex items-center justify-center p-2 opacity-0 transition-opacity duration-300">
-     <div class="bg-slate-800 w-full max-w-2xl rounded-2xl border border-slate-700 flex flex-col max-h-[95vh] transform scale-95 transition-transform" id="modalPanel"><div class="p-4 border-b border-slate-700 flex justify-between items-center"><h3 class="text-white font-bold">New Outing</h3><button onclick="closeModal()" class="text-slate-400"><i class="fa-solid fa-xmark"></i></button></div><div class="p-6 overflow-y-auto"><form id="outingForm" onsubmit="handleCreate(event)" class="space-y-4"><input class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white" id="eventName" placeholder="Event Name" required><input type="text" id="eventDate" class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white placeholder-slate-400 [color-scheme:dark]" placeholder="Event Date" onfocus="(this.type='date')" onblur="formatDateDisplay(this)" required><div class="text-xs text-slate-400 uppercase font-bold">Meeting (Loc & Time)</div><div class="grid grid-cols-3 gap-2"><input name="meetingLoc" class="col-span-2 bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs" placeholder="Loc 1"><input name="meetingTime" type="time" class="bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs [color-scheme:dark]"></div><div class="grid grid-cols-3 gap-2"><input name="meetingLoc" class="col-span-2 bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs" placeholder="Loc 2"><input name="meetingTime" type="time" class="bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs [color-scheme:dark]"></div><div class="grid grid-cols-3 gap-2"><input name="meetingLoc" class="col-span-2 bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs" placeholder="Loc 3"><input name="meetingTime" type="time" class="bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs [color-scheme:dark]"></div><div class="grid grid-cols-3 gap-2"><input name="meetingLoc" class="col-span-2 bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs" placeholder="Loc 4"><input name="meetingTime" type="time" class="bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs [color-scheme:dark]"></div><div class="text-xs text-slate-400 uppercase font-bold">Dismissal (Loc & Time)</div><div class="grid grid-cols-3 gap-2"><input name="dismissalLoc" class="col-span-2 bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs" placeholder="Loc 1"><input name="dismissalTime" type="time" class="bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs [color-scheme:dark]"></div><div class="grid grid-cols-3 gap-2"><input name="dismissalLoc" class="col-span-2 bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs" placeholder="Loc 2"><input name="dismissalTime" type="time" class="bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs [color-scheme:dark]"></div><div class="grid grid-cols-3 gap-2"><input name="dismissalLoc" class="col-span-2 bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs" placeholder="Loc 3"><input name="dismissalTime" type="time" class="bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs [color-scheme:dark]"></div><div class="grid grid-cols-3 gap-2"><input name="dismissalLoc" class="col-span-2 bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs" placeholder="Loc 4"><input name="dismissalTime" type="time" class="bg-slate-900 border border-slate-600 rounded p-2 text-white text-xs [color-scheme:dark]"></div><div id="createStatusArea" class="hidden text-center text-xs p-2"></div><button id="submitCreateBtn" type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded">Generate</button></form></div></div>
-   </div>
+    <!-- CART -->
+    <section id="view-cart" class="p-4 hidden fade-in">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Your Cart</h2>
+            <button onclick="router('shop')" class="text-sm text-blue-600 dark:text-blue-400 font-semibold hover:underline"><i class="fas fa-plus"></i> Shop More</button>
+        </div>
+        <div id="cartItems" class="space-y-4 mb-6"></div>
+        <div id="cartSummary" class="hidden">
+            <div class="bg-white dark:bg-gray-800 p-4 rounded shadow border-t-4 border-blue-600 mb-4">
+                <div class="flex justify-between font-bold text-lg"><span>Total:</span><span id="cartTotal">$0.00</span></div>
+            </div>
+            <button id="checkoutBtn" onclick="router('checkout')" class="w-full bg-green-600 text-white py-3 rounded-lg font-bold shadow-lg mb-3 hover:bg-green-700">Proceed to Checkout</button>
+            <button onclick="router('shop')" class="w-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 py-3 rounded-lg font-bold">Continue Shopping</button>
+        </div>
+    </section>
 
-   <!-- SCRIPT -->
-   <script>
-     // --- CONFIGURATION ---
-     if (IS_DEV) { document.getElementById('dev-bar').classList.remove('hidden'); }
+    <!-- CHECKOUT -->
+    <section id="view-checkout" class="p-4 hidden fade-in">
+        <div class="flex items-center gap-2 mb-4">
+             <button onclick="router('cart')" class="text-gray-500 dark:text-gray-400"><i class="fas fa-arrow-left"></i></button>
+             <h2 class="text-xl font-bold">Payment & Submit</h2>
+        </div>
+        
+        <!-- COMPACT QR SECTION -->
+        <div class="bg-white dark:bg-gray-800 border-2 border-purple-800 dark:border-purple-600 p-3 rounded-lg mb-4 shadow-sm">
+            <div class="flex flex-row items-center gap-4">
+                <!-- Left: QR (Image for long-press) and Download -->
+                <div class="flex flex-col items-center gap-2 shrink-0">
+                    <div class="bg-white p-1 rounded border dark:border-gray-600">
+                        <!-- Hidden Canvas for generation -->
+                        <canvas id="qrCanvas" class="hidden"></canvas>
+                        <!-- Image tag for display and long-press -->
+                        <img id="qrImage" class="w-24 h-24" alt="QR Code">
+                    </div>
+                    <!-- Download Button -->
+                    <a id="downloadQrBtn" href="#" download="paynow_qr.png" class="w-full text-center bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 px-2 py-1 rounded text-xs font-bold hover:bg-purple-200 dark:hover:bg-purple-800">
+                        <i class="fas fa-download"></i> Save QR
+                    </a>
+                    <p class="text-[10px] text-gray-400 text-center leading-tight w-24">If button fails, long-press QR to save</p>
+                </div>
 
-     let currentSheetList = [];
-     let selectedVolType = null;
-     let allNames = [];
-     let allProjects = []; 
-     let currentVolTypeRequest = null;
-     let isAdminAuthenticated = false;
-     let pendingView = "";
-     let currentActiveView = 'landing';
-     let outingReminders = {};
+                <!-- Right: Details -->
+                <div class="flex-1 text-left flex flex-col justify-center h-full">
+                    <!-- LARGER LOGO -->
+                    <div class="mb-2">
+                        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSrFTTv8ACzZZSrgYoLfi00cQmG-hPk0Pxdzg&s" alt="PayNow" class="h-12 object-contain">
+                    </div>
+                    
+                    <div class="flex items-baseline gap-2 mb-1">
+                        <span class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Pay:</span>
+                        <span id="paynowTotalDisplay" class="text-xl font-bold text-purple-700 dark:text-purple-400">$0.00</span>
+                    </div>
+                    
+                    <div class="mb-2">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">To: <span id="paynowNumberDisplay" class="font-mono font-bold text-gray-800 dark:text-gray-200">...</span></p>
+                    </div>
 
-     // --- API HELPER ---
-     async function apiCall(action, data = {}) {
-        const response = await fetch(API_URL, {
-            method: "POST",
-            body: JSON.stringify({ action: action, data: data })
+                    <div class="inline-block">
+                        <span class="text-xs text-purple-700 dark:text-purple-300 font-bold bg-purple-100 dark:bg-purple-900/50 px-2 py-1 rounded border border-purple-200 dark:border-purple-800">Ref: <span id="paynowRefDisplay">---</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <form id="checkoutForm" onsubmit="handleSubmission(event)" class="space-y-4 bg-white dark:bg-gray-800 p-5 rounded shadow">
+            <div><label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Full Name</label><input type="text" name="customerName" required class="w-full p-2 border rounded mt-1 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"></div>
+            <div class="grid grid-cols-2 gap-4">
+                <div><label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">WhatsApp No.</label><input type="tel" name="contact" id="contactInput" required placeholder="e.g. 91234567" class="w-full p-2 border rounded mt-1 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"></div>
+                <div><label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Email</label><input type="email" name="email" required class="w-full p-2 border rounded mt-1 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"></div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">I am a...</label>
+                <select id="userType" name="userType" onchange="handleUserTypeChange()" required class="w-full p-2 border rounded mt-1 bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    <option value="">Select...</option>
+                    <option value="Volunteer">Volunteer</option>
+                    <option value="Friend/Family">Friend of Volunteer</option>
+                    <option value="Caregiver">Caregiver</option>
+                    <option value="Public">Public</option>
+                </select>
+            </div>
+            <div id="dynamicField" class="hidden">
+                <label id="dynamicLabel" class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Name</label>
+                <input type="text" id="relatedName" name="relatedName" class="w-full p-2 border rounded mt-1 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Payment Screenshot</label>
+                <input type="file" id="paymentProof" accept="image/*" required class="w-full text-sm text-gray-500 mt-1 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-700 dark:file:text-gray-300">
+            </div>
+            <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 mt-4 shadow">Submit Order</button>
+        </form>
+    </section>
+
+    <!-- SUCCESS -->
+    <section id="view-success" class="p-6 hidden fade-in flex flex-col items-center justify-center min-h-[60vh]">
+        <div class="bg-green-100 dark:bg-green-900 p-4 rounded-full mb-4"><i class="fas fa-check text-4xl text-green-600 dark:text-green-400"></i></div>
+        <h2 class="text-2xl font-bold text-green-700 dark:text-green-400 mb-2">Order Submitted!</h2>
+        
+        <div class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 mb-4 text-center">
+            <p class="text-sm text-blue-800 dark:text-blue-200">A confirmation email has been sent to <br><span id="successEmailDisplay" class="font-bold">...</span></p>
+        </div>
+
+        <div id="successCollectionDetails" class="hidden w-full bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded p-4 mb-6 text-center">
+            <p class="text-xs font-bold text-amber-700 dark:text-amber-300 uppercase mb-1">Collection Details</p>
+            <p id="successFooterText" class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap"></p>
+        </div>
+        
+        <div class="bg-white dark:bg-gray-800 p-4 rounded shadow w-full mb-6">
+             <div class="flex justify-between items-center mb-4">
+                 <span class="text-sm text-gray-500 dark:text-gray-400 font-bold uppercase">Order ID</span>
+                 <span id="successOrderId" class="text-xl font-mono font-bold text-gray-800 dark:text-gray-100">ORD-XXXX</span>
+             </div>
+             
+             <div class="border-t border-b border-gray-200 dark:border-gray-700 py-3 mb-3">
+                 <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2">Order Summary</p>
+                 <div id="successSummary" class="space-y-1 text-sm text-gray-700 dark:text-gray-300"></div>
+             </div>
+
+             <div class="flex justify-between items-center">
+                 <span class="text-sm text-gray-500 dark:text-gray-400 font-bold uppercase">Total</span>
+                 <span id="successTotal" class="text-xl font-bold text-blue-600 dark:text-blue-400">$0.00</span>
+             </div>
+        </div>
+        
+        <button onclick="sendWhatsapp()" class="w-full bg-green-500 text-white py-3 rounded-lg font-bold hover:bg-green-600 shadow-lg flex items-center justify-center gap-2 mb-3 px-4 text-center text-sm">
+            <i class="fab fa-whatsapp text-xl shrink-0"></i> Press Here to send yourself the order confirmation via WhatsApp
+        </button>
+        <button onclick="router('home')" class="text-blue-600 dark:text-blue-400 font-bold hover:underline">Back to Home</button>
+    </section>
+
+    <!-- ADMIN -->
+    <section id="view-admin" class="p-4 hidden fade-in bg-gray-100 dark:bg-gray-900 min-h-screen">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Manager Dashboard</h2>
+            <button onclick="adminLogout()" class="text-red-500 text-sm font-bold">Log Out</button>
+        </div>
+        
+        <div class="flex border-b border-gray-300 dark:border-gray-700 mb-4">
+            <button onclick="switchAdminTab('dashboard')" id="tab-dashboard" class="flex-1 py-2 font-bold text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400">Dashboard</button>
+            <button onclick="switchAdminTab('summary')" id="tab-summary" class="flex-1 py-2 font-bold text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">Summary</button>
+            <button onclick="switchAdminTab('fulfillment')" id="tab-fulfillment" class="flex-1 py-2 font-bold text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">Fulfillment</button>
+        </div>
+
+        <div id="admin-panel-dashboard">
+            <div class="bg-white dark:bg-gray-800 p-4 rounded shadow mb-6">
+                <h3 class="font-bold text-gray-700 dark:text-gray-200 mb-2 border-b dark:border-gray-700 pb-2">📅 Canvassing Event</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Current: <span id="adminEventName" class="font-mono text-black dark:text-white">Loading...</span></p>
+                
+                <div class="mb-4 bg-gray-50 dark:bg-gray-700 p-3 rounded">
+                    <label class="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase tracking-wide">Switch Event</label>
+                    <div class="flex gap-2">
+                        <select id="eventSelector" class="flex-1 p-2 border rounded text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white">
+                            <option>Loading...</option>
+                        </select>
+                        <button onclick="handleSwitchEvent()" class="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold hover:bg-blue-700">Switch</button>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 mb-4">
+                    <button onclick="openEventSheet()" class="flex-1 bg-green-600 text-white py-2 rounded font-bold flex items-center justify-center gap-2 shadow hover:bg-green-700 text-sm">
+                        <i class="fas fa-table"></i> Open Sheet
+                    </button>
+                    <button onclick="openEventFolder()" class="flex-1 bg-gray-700 text-white py-2 rounded font-bold flex items-center justify-center gap-2 shadow hover:bg-gray-800 text-sm">
+                        <i class="fas fa-folder"></i> Open Folder
+                    </button>
+                </div>
+
+                <div class="flex gap-2">
+                    <input type="text" id="newEventName" placeholder="New Event Name" class="flex-1 p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    <button onclick="createNewEvent()" class="bg-gray-800 dark:bg-gray-700 text-white px-4 py-2 rounded text-sm font-bold">Create New</button>
+                </div>
+            </div>
+            
+            <div class="bg-white dark:bg-gray-800 p-4 rounded shadow mb-6">
+                <h3 class="font-bold text-gray-700 dark:text-gray-200 mb-2 border-b dark:border-gray-700 pb-2">⚙️ App Settings</h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase tracking-wide">App Title</label>
+                        <input type="text" id="editAppTitle" class="w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase tracking-wide">Banner Image (Optional)</label>
+                        <input type="file" id="newBannerImg" accept="image/*" class="w-full text-sm text-gray-500 dark:text-gray-400 mb-1">
+                        <button onclick="uploadBanner()" class="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded">Upload Banner</button>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase tracking-wide">Introduction (Rich Text)</label>
+                        <div class="border rounded dark:border-gray-600">
+                            <div class="bg-gray-100 dark:bg-gray-700 p-1 border-b dark:border-gray-600 editor-toolbar flex gap-1 flex-wrap">
+                                <button type="button" onclick="formatDoc('bold')" title="Bold"><b>B</b></button>
+                                <button type="button" onclick="formatDoc('italic')" title="Italic"><i>I</i></button>
+                                <button type="button" onclick="formatDoc('underline')" title="Underline"><u>U</u></button>
+                                
+                                <label title="Text Color" class="relative">
+                                    <i class="fas fa-palette"></i>
+                                    <input type="color" onchange="formatDoc('foreColor', this.value)" class="absolute inset-0 opacity-0 w-full h-full cursor-pointer">
+                                </label>
+
+                                <button type="button" onclick="applyHighlight()" title="Highlight (Yellow)">
+                                    <i class="fas fa-highlighter text-yellow-600"></i>
+                                </button>
+                            </div>
+                            <div id="editIntroRich" contenteditable="true" class="p-2 min-h-[150px] text-sm dark:text-white bg-white dark:bg-gray-700"></div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase tracking-wide">Email Intro Message</label>
+                        <textarea id="editEmailIntro" rows="5" class="resize-y w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Text before order details..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase tracking-wide">Email Footer (Collection Details)</label>
+                        <textarea id="editEmailFooter" rows="5" class="resize-y w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Text after order details..."></textarea>
+                    </div>
+
+                    <div><label class="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase tracking-wide">PayNow Number (8 Digits)</label><input type="tel" id="editPayment" maxlength="8" class="w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="e.g. 91234567"></div>
+                    <div>
+                        <label class="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase tracking-wide">Closing Date</label>
+                        <div class="flex items-center gap-2">
+                             <input type="date" id="editClosingDate" class="p-2 border rounded text-sm flex-1 dark:bg-gray-700 dark:border-gray-600 dark:text-white" onchange="updateDatePreview()">
+                             <span id="datePreview" class="text-sm font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap"></span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">Orders prohibited after this date.</p>
+                    </div>
+                    <div><label class="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase tracking-wide">Admin PIN</label><input type="text" id="editPin" class="w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"></div>
+                    <button onclick="saveSettings()" class="w-full bg-blue-600 text-white py-2 rounded font-bold">Save Settings</button>
+                </div>
+            </div>
+            
+            <div class="bg-white dark:bg-gray-800 p-4 rounded shadow mb-10">
+                <h3 class="font-bold text-gray-700 dark:text-gray-200 mb-4 border-b dark:border-gray-700 pb-2">📦 Manage Products</h3>
+                <div class="flex gap-2 mb-4">
+                    <button onclick="saveListing()" class="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded shadow hover:bg-blue-700">💾 Save Listing</button>
+                    <button onclick="resetOrder()" class="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-bold py-2 rounded shadow hover:bg-gray-300">🔄 Reset A-Z</button>
+                </div>
+                <div id="adminProductList" class="space-y-2 mb-6"></div>
+                <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded border dark:border-gray-600">
+                    <p class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">ADD NEW PRODUCT</p>
+                    <input type="text" id="newProdName" placeholder="Product Name" class="w-full p-2 border rounded mb-2 text-sm dark:bg-gray-800 dark:border-gray-500 dark:text-white">
+                    <input type="number" id="newProdPrice" placeholder="Price ($)" class="w-full p-2 border rounded mb-2 text-sm dark:bg-gray-800 dark:border-gray-500 dark:text-white">
+                    <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Product Image</label>
+                    <input type="file" id="newProdImg" accept="image/*" class="w-full text-sm text-gray-500 dark:text-gray-400 mb-2 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-600 dark:file:text-gray-200">
+                    <button onclick="addProduct()" class="w-full bg-green-600 text-white py-2 rounded text-sm font-bold">Upload & Add Product</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="admin-panel-summary" class="hidden">
+            <div id="summaryContent" class="space-y-6">
+                <!-- Summary content unchanged -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded shadow border-l-4 border-blue-500">
+                        <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Total Revenue</p>
+                        <p id="sumRevenue" class="text-2xl font-bold text-gray-800 dark:text-white">Loading...</p>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded shadow border-l-4 border-green-500">
+                        <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Total Orders</p>
+                        <p id="sumOrders" class="text-2xl font-bold text-gray-800 dark:text-white">Loading...</p>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded shadow border-l-4 border-purple-500 col-span-2">
+                        <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Top Selling Item</p>
+                        <p id="sumTopItem" class="text-lg font-bold text-gray-800 dark:text-white">Loading...</p>
+                    </div>
+                </div>
+                <div class="bg-white dark:bg-gray-800 p-4 rounded shadow">
+                    <h3 class="font-bold text-gray-700 dark:text-gray-200 mb-3 border-b dark:border-gray-700 pb-2">📊 Detailed Breakdown</h3>
+                    <div class="mb-4">
+                        <label class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Group By:</label>
+                        <select id="summaryGroupBy" onchange="renderConfigurableSummary()" class="w-full p-2 border rounded mt-1 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            <option value="item">Product Item</option>
+                            <option value="userType">User Type</option>
+                        </select>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-100 dark:bg-gray-700 dark:text-gray-200">
+                                <tr>
+                                    <th scope="col" class="px-4 py-3 rounded-l-lg">Group</th>
+                                    <th scope="col" class="px-4 py-3">Count</th>
+                                    <th scope="col" class="px-4 py-3 rounded-r-lg">Total ($)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summaryTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="admin-panel-fulfillment" class="hidden">
+            <div class="bg-white dark:bg-gray-800 p-4 rounded shadow mb-4">
+                 <h3 class="font-bold text-gray-700 dark:text-gray-200 mb-2">Order Search</h3>
+                 <div class="flex gap-2">
+                     <input type="text" id="orderSearchInput" onkeyup="filterOrders()" placeholder="Search Name, Phone or Order ID..." class="flex-1 p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                     <button onclick="loadAdminOrders()" class="bg-blue-600 text-white px-3 py-2 rounded"><i class="fas fa-sync"></i></button>
+                 </div>
+            </div>
+            <div id="orderListContainer" class="space-y-3 pb-10">
+                <p class="text-center text-gray-400 py-4">Loading orders...</p>
+            </div>
+        </div>
+
+    </section>
+</main>
+
+
+<script>
+    let appData = { config: {}, products: [], activeEventName: '', activeSheetId: null, activeFolderId: null };
+    let cart = []; 
+    let lastOrderDetails = null;
+    let currentOrderId = null; 
+    let ADMIN_PIN = null;
+    let allOrders = []; 
+    let sortableInstance = null; 
+
+    // Rich Text Helper
+    function formatDoc(cmd, value=null) {
+        document.execCommand(cmd, false, value);
+    }
+    
+    // Custom Highlight Function for Visibility
+    function applyHighlight() {
+        const selection = window.getSelection();
+        if (selection.rangeCount) {
+            const range = selection.getRangeAt(0);
+            const span = document.createElement("span");
+            // Tailwind class ensuring text is black on yellow bg even in dark mode
+            span.className = "bg-yellow-200 text-gray-900 dark:bg-yellow-500 dark:text-black px-1 rounded";
+            span.textContent = selection.toString();
+            
+            // Basic handling: delete selection and insert span
+            // Note: This is a simple implementation. Complex selections might need better handling.
+            range.deleteContents();
+            range.insertNode(span);
+        }
+    }
+
+    // Initialize App Data
+    window.onload = loadAppData;
+
+    async function apiCall(action, payload = {}) {
+        showLoading(true);
+        try {
+            const body = { action, payload, pin: ADMIN_PIN };
+            if (action === 'CREATE_EVENT') body.eventName = payload; 
+            const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.message);
+            return json;
+        } catch (e) { alert("Error: " + e.message); throw e; } 
+        finally { showLoading(false); }
+    }
+
+    async function loadAppData() {
+        try {
+            const res = await apiCall('GET_APP_DATA');
+            appData = res.data;
+            updateUI();
+        } catch(e) {}
+    }
+
+    function updateUI() {
+        document.title = appData.config.appTitle || "Fundraising Shop";
+        document.getElementById('appTitleDisplay').innerText = appData.config.appTitle || "Fundraising Drive";
+        document.getElementById('editAppTitle').value = appData.config.appTitle || "";
+
+        document.getElementById('displayIntro').innerHTML = appData.config.intro || '';
+        document.getElementById('editIntroRich').innerHTML = appData.config.intro || '';
+
+        const bannerEl = document.getElementById('displayBanner');
+        if (appData.config.bannerImageId) {
+            bannerEl.src = "https://lh3.googleusercontent.com/d/" + appData.config.bannerImageId;
+            bannerEl.classList.remove('hidden');
+        } else {
+            bannerEl.classList.add('hidden');
+        }
+
+        document.getElementById('editPayment').value = appData.config.paymentInfo || '';
+        document.getElementById('displayEventName').innerText = appData.activeEventName || 'None';
+        document.getElementById('editClosingDate').value = appData.config.closingDate || '';
+        
+        document.getElementById('editEmailIntro').value = appData.config.emailIntro || '';
+        document.getElementById('editEmailFooter').value = appData.config.emailFooter || '';
+        
+        updateDatePreview();
+        checkShopStatus();
+        renderProducts();
+        renderCart();
+    }
+    
+    // ... (updateDatePreview, checkShopStatus unchanged) ...
+    function updateDatePreview() {
+        const val = document.getElementById('editClosingDate').value;
+        const el = document.getElementById('datePreview');
+        if (!val) { el.innerText = ''; return; }
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const parts = val.split('-');
+        if(parts.length < 3) return; 
+        const year = parts[0];
+        const month = months[parseInt(parts[1], 10) - 1];
+        const day = parseInt(parts[2], 10);
+        el.innerText = `${day} ${month} ${year}`;
+    }
+    function checkShopStatus() {
+        if (!appData.config.closingDate) return;
+        const closeDate = new Date(appData.config.closingDate);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const isClosed = today > closeDate;
+        if (isClosed) {
+            document.getElementById('shopStatusBanner').classList.remove('hidden');
+            document.getElementById('startShoppingBtn').disabled = true;
+            document.getElementById('startShoppingBtn').innerText = "Shop Closed";
+            document.getElementById('startShoppingBtn').classList.add('bg-gray-400', 'cursor-not-allowed');
+            document.getElementById('startShoppingBtn').classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            document.getElementById('shopClosedMsg').classList.remove('hidden');
+            document.getElementById('shopViewCartBtn').disabled = true;
+            document.getElementById('shopViewCartBtn').classList.add('bg-gray-400');
+        } else {
+             document.getElementById('shopStatusBanner').classList.add('hidden');
+             document.getElementById('shopClosedMsg').classList.add('hidden');
+        }
+        return isClosed;
+    }
+
+    function renderProducts() {
+        const isClosed = checkShopStatus();
+        const list = document.getElementById('productList');
+        if (appData.products.length === 0) { list.innerHTML = `<p class="text-center text-gray-400 py-10">No items available.</p>`; return; }
+        list.innerHTML = appData.products.map(p => {
+            const inCart = cart.find(c => c.id === p.id);
+            const btnHtml = isClosed ? 
+                `<span class="text-xs text-red-500 font-bold">Unavailable</span>` :
+                (inCart ? `<div class="flex items-center bg-blue-50 dark:bg-gray-700 rounded-lg overflow-hidden border border-blue-100 dark:border-gray-600"><button onclick="deleteItem('${p.id}')" class="w-8 h-8 flex items-center justify-center text-red-500 font-bold hover:bg-red-100 dark:hover:bg-red-900"><i class="fas fa-trash-alt text-xs"></i></button><button onclick="updateQty('${p.id}', -1)" class="w-8 h-8 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold hover:bg-blue-200 dark:hover:bg-gray-600">-</button><span class="w-8 text-center text-sm font-bold text-blue-800 dark:text-gray-100">${inCart.qty}</span><button onclick="updateQty('${p.id}', 1)" class="w-8 h-8 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold hover:bg-blue-200 dark:hover:bg-gray-600">+</button></div>` : `<button onclick="addToCart('${p.id}')" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm">Add to Cart</button>`);
+
+            return `
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow flex overflow-hidden border border-gray-100 dark:border-gray-700 relative">
+                <div class="w-24 h-full bg-gray-200 shrink-0 absolute left-0 top-0 bottom-0"><img src="${p.image}" class="w-full h-full object-cover"></div>
+                <div class="p-3 flex-1 flex flex-col justify-between pl-28 min-h-[100px]">
+                    <div class="flex justify-between items-start"><h3 class="font-bold text-gray-800 dark:text-gray-100 text-sm">${p.name}</h3><span class="text-blue-600 dark:text-blue-400 font-bold">$${p.price}</span></div>
+                    <div class="self-end mt-2">
+                        ${ btnHtml }
+                    </div>
+                </div>
+            </div>`
+        }).join('');
+    }
+
+    function renderCart() {
+        const total = cart.reduce((s, i) => s + (i.price * i.qty), 0);
+        document.getElementById('cartTotal').innerText = `$${total.toFixed(2)}`;
+        document.getElementById('headerCartCount').innerText = cart.reduce((s, i) => s + i.qty, 0);
+        const shopBtn = document.getElementById('shopViewCartBtn');
+        if (shopBtn) shopBtn.innerText = `View Cart & Checkout ($${total.toFixed(2)})`;
+        const container = document.getElementById('cartItems');
+        if (cart.length === 0) {
+            container.innerHTML = '<div class="text-center text-gray-400 py-12 flex flex-col items-center"><i class="fas fa-shopping-basket text-4xl mb-3"></i><p>Your cart is empty</p></div>';
+            document.getElementById('cartSummary').classList.add('hidden');
+        } else {
+            document.getElementById('cartSummary').classList.remove('hidden');
+            container.innerHTML = cart.map(item => `
+                <div class="flex justify-between items-center bg-white dark:bg-gray-800 p-3 rounded shadow-sm border-l-4 border-blue-500">
+                    <div><div class="font-bold text-sm text-gray-800 dark:text-gray-100">${item.name}</div><div class="text-xs text-gray-500 dark:text-gray-400">$${item.price} x ${item.qty}</div></div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="deleteItem('${item.id}')" class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-300 font-bold hover:bg-red-200"><i class="fas fa-trash-alt text-xs"></i></button>
+                        <button onclick="updateQty('${item.id}', -1)" class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 font-bold">-</button>
+                        <span class="text-sm font-bold w-4 text-center text-gray-800 dark:text-gray-100">${item.qty}</span>
+                        <button onclick="updateQty('${item.id}', 1)" class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-bold">+</button>
+                    </div>
+                </div>`).join('');
+        }
+    }
+
+    function addToCart(id) { const product = appData.products.find(p => p.id === id); if (product) { cart.push({ ...product, qty: 1 }); refreshAllViews(); } }
+    
+    function updateQty(id, change) { 
+        const index = cart.findIndex(item => item.id === id); 
+        if (index > -1) { 
+            cart[index].qty += change; 
+            if (cart[index].qty <= 0) cart.splice(index, 1); 
+            refreshAllViews(); 
+        } 
+    }
+    
+    function deleteItem(id) {
+        const index = cart.findIndex(item => item.id === id);
+        if (index > -1) {
+            cart.splice(index, 1);
+            refreshAllViews();
+        }
+    }
+    
+    function refreshAllViews() { renderProducts(); renderCart(); }
+
+    function handleUserTypeChange() {
+        const type = document.getElementById('userType').value;
+        const field = document.getElementById('dynamicField');
+        const input = document.getElementById('relatedName');
+        const label = document.getElementById('dynamicLabel');
+        if (type === 'Friend/Family') { field.classList.remove('hidden'); label.innerText = "Name of Volunteer"; input.required = true; }
+        else if (type === 'Caregiver') { field.classList.remove('hidden'); label.innerText = "Name of Trainee"; input.required = true; }
+        else { field.classList.add('hidden'); input.required = false; }
+    }
+
+    function generateOrderId() { return "ORD-" + Math.floor(1000 + Math.random() * 9000); }
+    function generatePayNowQR() {
+        currentOrderId = generateOrderId();
+        const totalAmount = cart.reduce((s, i) => s + (i.price * i.qty), 0);
+        const uen = appData.config.paymentInfo; 
+        document.getElementById('paynowTotalDisplay').innerText = `$${totalAmount.toFixed(2)}`;
+        document.getElementById('paynowNumberDisplay').innerText = uen ? "+65 " + uen : "Not Set";
+        document.getElementById('paynowRefDisplay').innerText = currentOrderId;
+        
+        const canvas = document.getElementById('qrCanvas');
+        const img = document.getElementById('qrImage');
+        
+        if (!uen || totalAmount <= 0) return;
+        
+        const payload = createPayNowPayload(uen, totalAmount, currentOrderId);
+        new QRious({ element: canvas, value: payload, size: 200, level: 'H' });
+        
+        // Convert to Image for Long-Press
+        img.src = canvas.toDataURL("image/png");
+        document.getElementById('downloadQrBtn').href = canvas.toDataURL("image/png");
+    }
+    function createPayNowPayload(number, amount, refId) {
+        const amtStr = amount.toFixed(2);
+        const proxy = `+65${number}`;
+        const acctInfoContent = `0009SG.PAYNOW0101002${pad(proxy.length)}${proxy}03010`;
+        const acctInfo = `26${pad(acctInfoContent.length)}${acctInfoContent}`;
+        const refContent = `01${pad(refId.length)}${refId}`;
+        const refField = `62${pad(refContent.length)}${refContent}`;
+        let raw = `000201010212` + acctInfo + `52040000` + `5303702` + `54${pad(amtStr.length)}${amtStr}` + `5802SG` + `5911Fundraising` + `6009Singapore` + refField + `6304`;
+        return raw + calcCRC(raw);
+    }
+    function pad(len) { return len < 10 ? `0${len}` : `${len}`; }
+    function calcCRC(str) {
+        let crc = 0xFFFF;
+        for (let i = 0; i < str.length; i++) {
+            let c = str.charCodeAt(i);
+            crc ^= (c << 8) & 0xFFFF;
+            for (let j = 0; j < 8; j++) {
+                if (crc & 0x8000) crc = (crc << 1) ^ 0x1021;
+                else crc = crc << 1;
+                crc &= 0xFFFF;
+            }
+        }
+        return crc.toString(16).toUpperCase().padStart(4, '0');
+    }
+
+    async function handleSubmission(e) {
+        e.preventDefault();
+        if (checkShopStatus()) return alert("Shop is closed.");
+        if (cart.length === 0) return alert("Cart empty");
+        if (!confirm("Submit Order?")) return;
+        
+        const form = new FormData(e.target);
+        const file = document.getElementById('paymentProof').files[0];
+        
+        showLoading(true, "Compressing Payment Proof...");
+        // Added Timeout logic
+        let base64;
+        try {
+            base64 = await compressImage(file, 0.5);
+        } catch (e) {
+            showLoading(false);
+            alert("Error processing image: " + e.message + "\nPlease try a different file.");
+            return;
+        }
+        
+        showLoading(true, "Submitting Order...");
+        const totalAmount = cart.reduce((s, i) => s + (i.price * i.qty), 0);
+        
+        const payload = {
+            orderId: currentOrderId,
+            customerName: form.get('customerName'),
+            contact: form.get('contact'),
+            email: form.get('email'),
+            userType: form.get('userType'),
+            relatedName: form.get('relatedName') || 'N/A',
+            cart: cart,
+            totalAmount: totalAmount,
+            paymentProofBase64: base64,
+            mimeType: 'image/jpeg' 
+        };
+
+        try {
+            const res = await apiCall('SUBMIT_ORDER', payload);
+            lastOrderDetails = { id: res.data.orderId, total: totalAmount, customerName: payload.customerName, email: payload.email, contact: payload.contact, cart: [...cart] };
+            cart = []; e.target.reset(); refreshAllViews();
+            document.getElementById('successOrderId').innerText = lastOrderDetails.id;
+            document.getElementById('successTotal').innerText = `$${lastOrderDetails.total.toFixed(2)}`;
+            
+            // Populate Success Screen Details
+            document.getElementById('successEmailDisplay').innerText = lastOrderDetails.email || "your email";
+            
+            const summaryHtml = lastOrderDetails.cart.map(i => `
+                <div class="flex justify-between">
+                    <span>${i.name} (x${i.qty})</span>
+                    <span class="font-mono">$${(i.price * i.qty).toFixed(2)}</span>
+                </div>
+            `).join('');
+            document.getElementById('successSummary').innerHTML = summaryHtml;
+
+            // Show collection details if they exist
+            const footerText = appData.config.emailFooter;
+            if(footerText) {
+                document.getElementById('successFooterText').innerText = footerText;
+                document.getElementById('successCollectionDetails').classList.remove('hidden');
+            } else {
+                document.getElementById('successCollectionDetails').classList.add('hidden');
+            }
+
+            router('success');
+
+        } catch(err) { console.error(err); }
+    }
+
+    function sendWhatsapp() {
+        if (!lastOrderDetails) return;
+        let num = lastOrderDetails.contact.replace(/\D/g, '');
+        if (num.length === 8) num = '65' + num;
+        
+        const intro = appData.config.emailIntro || `Hi ${lastOrderDetails.customerName}, thank you for your support! We have received your order.`;
+        const footer = appData.config.emailFooter || "If you have any questions, please reply to this message.";
+        
+        const itemsList = lastOrderDetails.cart.map((i, index) => 
+            `${index+1}. ${i.name}\n   Qty: ${i.qty} | Sub: $${(i.price * i.qty).toFixed(2)}`
+        ).join('\n\n');
+
+        const msg = `*Order Confirmation*\n${intro}\n\n*Order ID:* ${lastOrderDetails.id}\n*Date:* ${new Date().toLocaleDateString()}\n\n*Items:*\n${itemsList}\n\n*Total: $${lastOrderDetails.total.toFixed(2)}*\n\n_${footer}_`;
+        
+        window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+
+    async function openAdminAuth() {
+        const pin = prompt("Enter Admin PIN:");
+        if (pin) {
+            try { ADMIN_PIN = pin; await apiCall('VERIFY_ADMIN'); openAdminPanel(); } catch(e) { ADMIN_PIN = null; }
+        }
+    }
+    
+    function openAdminPanel() {
+        router('admin');
+        document.getElementById('adminEventName').innerText = appData.activeEventName;
+        document.getElementById('editIntroRich').innerHTML = appData.config.intro || '';
+        
+        document.getElementById('editPayment').value = appData.config.paymentInfo || '';
+        document.getElementById('editClosingDate').value = appData.config.closingDate || '';
+        document.getElementById('editPin').value = appData.config.adminPin || '1234';
+        
+        loadEventList();
+        renderAdminProducts();
+        switchAdminTab('dashboard'); 
+    }
+    
+    async function loadEventList() {
+        const selector = document.getElementById('eventSelector');
+        selector.innerHTML = '<option>Loading...</option>';
+        try {
+            const res = await apiCall('GET_EVENTS');
+            selector.innerHTML = res.data.map(e => `
+                <option value="${e.id}" ${e.id === appData.activeFolderId ? 'selected' : ''}>${e.name}</option>
+            `).join('');
+        } catch(e) {
+            selector.innerHTML = '<option>Error loading events</option>';
+        }
+    }
+
+    async function handleSwitchEvent() {
+        const folderId = document.getElementById('eventSelector').value;
+        if(!folderId || folderId.includes('Loading')) return;
+        if(!confirm("Switch to this event? Products and Orders will change.")) return;
+        
+        await apiCall('SWITCH_EVENT', { folderId });
+        alert("Event Switched! Reloading data...");
+        loadAppData().then(() => {
+             document.getElementById('adminEventName').innerText = appData.activeEventName;
+             renderAdminProducts();
+             document.getElementById('orderListContainer').innerHTML = '<p class="text-center text-gray-400 py-4">Reloading orders...</p>';
+             document.getElementById('summaryTableBody').innerHTML = '';
         });
-        return await response.json();
-     }
+    }
+    
+    // ... (switchAdminTab, loadAdminOrders, calculateSummaries, renderConfigurableSummary, filterOrders, updateStatus, renderAdminProducts, openEventSheet, saveListing, resetOrder, saveSettings, uploadBanner, addProduct, deleteProduct, createNewEvent, adminLogout, router, showLoading, compressImage, openEventFolder unchanged) ...
+    function switchAdminTab(tab) {
+        ['dashboard', 'summary', 'fulfillment'].forEach(t => {
+            const el = document.getElementById(`admin-panel-${t}`);
+            const btn = document.getElementById(`tab-${t}`);
+            if (t === tab) {
+                el.classList.remove('hidden');
+                btn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600', 'dark:text-blue-400', 'dark:border-blue-400');
+                btn.classList.remove('text-gray-500', 'dark:text-gray-400');
+            } else {
+                el.classList.add('hidden');
+                btn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600', 'dark:text-blue-400', 'dark:border-blue-400');
+                btn.classList.add('text-gray-500', 'dark:text-gray-400');
+            }
+        });
+        
+        if (tab === 'fulfillment' || tab === 'summary') loadAdminOrders();
+    }
 
-     // --- CORE FUNCTIONS ---
-     function showView(viewId) { currentActiveView = viewId; document.querySelectorAll('main > div').forEach(div => div.classList.add('hidden')); document.getElementById('view-' + viewId).classList.remove('hidden'); document.getElementById('volFormStatus').classList.add('hidden'); document.getElementById('scrubStatus').classList.add('hidden'); document.getElementById('createStatusArea').classList.add('hidden'); document.getElementById('settingsStatus').classList.add('hidden'); if (viewId === 'comm' || viewId === 'volunteer') loadSheets(viewId); if (viewId === 'settings') loadSettings(); }
-     function refreshApp() { const icon = document.getElementById('refreshIcon'); icon.classList.add('fa-spin'); if (currentActiveView === 'comm') loadSheets('comm'); else if (currentActiveView === 'volunteer') { loadSheets('volunteer'); resetVolForm(); } else if (currentActiveView === 'settings') loadSettings(); setTimeout(() => icon.classList.remove('fa-spin'), 1000); }
-     function requestAccess(viewId) { if (isAdminAuthenticated) { showView(viewId); } else { pendingView = viewId; document.getElementById('authModal').classList.remove('hidden'); document.getElementById('adminPassword').value = ""; document.getElementById('authError').classList.add('hidden'); document.getElementById('adminPassword').focus(); } }
-     function closeAuthModal() { document.getElementById('authModal').classList.add('hidden'); pendingView = ""; }
-     function handleAuth(e) { e.preventDefault(); const pwd = document.getElementById('adminPassword').value; const btn = document.getElementById('authBtn'); btn.disabled = true; btn.innerText = "Checking..."; apiCall('verifyAdminPassword', { password: pwd }).then(res => { btn.disabled = false; btn.innerText = "Access"; if (res) { isAdminAuthenticated = true; const target = pendingView; closeAuthModal(); if(target) showView(target); } else { document.getElementById('authError').classList.remove('hidden'); document.getElementById('adminPassword').value = ""; } }); }
-     function showFlashMessage(elementId, message, type) { const el = document.getElementById(elementId); el.innerText = message; el.classList.remove('hidden', 'bg-green-900/20', 'text-green-400', 'border-green-500/30', 'bg-red-900/20', 'text-red-400', 'border-red-500/30'); if (type === 'success') { el.classList.add('bg-green-900/20', 'text-green-400', 'border', 'border-green-500/30'); } else { el.classList.add('bg-red-900/20', 'text-red-400', 'border', 'border-red-500/30'); } el.classList.remove('hidden'); setTimeout(() => { el.classList.add('hidden'); }, 5000); }
-     function formatDateDisplay(input) { const val = input.value; if(!val) { input.type='text'; return; } const date = new Date(val); if(isNaN(date.getTime())) { input.type='text'; return; } const day = date.getDate().toString().padStart(2, '0'); const month = date.toLocaleString('default', { month: 'short' }); const year = date.getFullYear(); input.type = 'text'; input.value = `${day} ${month} ${year}`; }
+    async function loadAdminOrders() {
+        try {
+            const res = await apiCall('GET_ORDERS');
+            const grouped = {};
+            res.data.forEach(item => {
+                if (!grouped[item.orderId]) {
+                    grouped[item.orderId] = { ...item, items: [] };
+                }
+                grouped[item.orderId].items.push({ name: item.item, qty: item.qty, price: (item.total/item.qty) }); 
+                grouped[item.orderId].status = item.status; 
+            });
+            allOrders = Object.values(grouped).reverse();
+            window.lastRawData = res.data; 
 
-     function loadSheets(viewId) {
-       const selectorId = viewId === 'comm' ? 'commSheetSelector' : 'volSheetSelector';
-       const loadingId = viewId === 'comm' ? 'commSheetSpinner' : 'volSheetSpinner';
-       const selector = document.getElementById(selectorId);
-       const spinner = document.getElementById(loadingId);
-       const listContainer = document.getElementById('upcomingList');
+            if (!document.getElementById('admin-panel-fulfillment').classList.contains('hidden')) {
+                filterOrders();
+            }
+            if (!document.getElementById('admin-panel-summary').classList.contains('hidden')) {
+                calculateSummaries(res.data);
+            }
+            
+        } catch(e) {
+            console.error(e);
+        }
+    }
 
-       selector.innerHTML = '<option disabled selected>↻ Searching events...</option>';
-       selector.disabled = true;
-       if(spinner) spinner.classList.remove('hidden');
-      
-       if(viewId === 'comm' && listContainer) { listContainer.innerHTML = '<p class="text-xs italic"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading events...</p>'; }
+    function calculateSummaries(rawData) {
+        const totalRev = rawData.reduce((acc, curr) => acc + curr.total, 0);
+        const uniqueOrders = new Set(rawData.map(r => r.orderId)).size;
+        
+        const itemCounts = {};
+        rawData.forEach(r => { itemCounts[r.item] = (itemCounts[r.item] || 0) + r.qty; });
+        let topItem = "N/A"; let topCount = 0;
+        Object.entries(itemCounts).forEach(([name, count]) => {
+            if (count > topCount) { topCount = count; topItem = name; }
+        });
 
-       apiCall('getRecentOutingSheets').then(res => {
-           if(spinner) spinner.classList.add('hidden');
-           selector.disabled = false;
-           selector.innerHTML = '';
-          
-           if(viewId === 'comm' && listContainer) {
-               listContainer.innerHTML = '';
-               outingReminders = {};
-               if(res.success && res.data.length > 0) {
-                   let allCardsHtml = '';
-                   res.data.forEach((item, index) => {
-                       // Note: btn-group-${index} is created but hidden initially
-                       allCardsHtml += `
-                         <div class="flex flex-col gap-2 p-4 bg-slate-700/50 rounded-xl border border-slate-600 shadow-md relative">
-                           <div class="flex justify-between items-start">
-                             <div><div class="font-bold text-white text-sm">${item.displayName}</div><div class="text-slate-400 text-xs">${item.formattedDate}</div></div>
-                             <div class="flex gap-2 text-xs"><a href="${item.folderUrl}" target="_blank" class="text-blue-400 hover:text-blue-300"><i class="fa-regular fa-folder-open"></i></a><a href="${item.sheetUrl}" target="_blank" class="text-green-400 hover:text-green-300"><i class="fa-regular fa-file-excel"></i></a></div>
-                           </div>
-                           <div id="stats-${index}" class="text-xs text-slate-500 animate-pulse mt-2">Loading stats...</div>
-                           <div id="btn-group-${index}" class="hidden flex gap-2 mt-2 pt-2 border-t border-slate-600/50">
-                               <button onclick="openReminderModal('${index}')" class="flex-1 bg-slate-800 hover:bg-slate-600 text-slate-300 text-xs py-2 px-3 rounded border border-slate-600 transition-colors"><i class="fa-regular fa-message mr-1"></i> Reminder Message for Volunteer</button>
-                               <button onclick="copyReminderDirect('${index}', this)" class="bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white text-xs py-2 px-3 rounded border border-slate-600 transition-colors"><i class="fa-regular fa-copy"></i></button>
-                           </div>
-                         </div>`;
-                   });
-                   listContainer.innerHTML = allCardsHtml;
-                   res.data.forEach((item, index) => { fetchOutingStats(item.sheetUrl, index); });
-               } else { listContainer.innerHTML = '<p class="text-xs text-slate-500 italic">No upcoming outings found.</p>'; }
-           }
-           if(res.success && res.data.length > 0) { currentSheetList = res.data; res.data.forEach(item => { let opt = document.createElement('option'); opt.value = item.sheetUrl; opt.text = item.displayName; selector.appendChild(opt); }); selector.selectedIndex = 0; if (viewId === 'volunteer') resetVolForm(); } else { selector.innerHTML = '<option disabled selected>No upcoming events</option>'; }
-       });
-     }
+        document.getElementById('sumRevenue').innerText = `$${totalRev.toFixed(2)}`;
+        document.getElementById('sumOrders').innerText = uniqueOrders;
+        document.getElementById('sumTopItem').innerText = topCount > 0 ? `${topItem} (${topCount} sold)` : "N/A";
 
-     function fetchOutingStats(url, index) {
-       apiCall('getOutingDetails', { sheetUrl: url }).then(res => {
-         const container = document.getElementById(`stats-${index}`);
-         const btnGroup = document.getElementById(`btn-group-${index}`);
-         if(res.success) {
-           let html = '<table class="w-full text-[10px] text-left border-collapse"><tr class="text-slate-400 border-b border-slate-600"><th>Proj</th><th class="text-center">Trainees</th><th class="text-center">CG</th><th class="text-center">Vols</th></tr>';
-           const sortedKeys = Object.keys(res.stats).sort();
-           if(sortedKeys.length === 0) { html += '<tr><td colspan="4" class="text-center py-2 text-slate-500 italic">No data yet</td></tr>'; } 
-           else { for (const proj of sortedKeys) { const data = res.stats[proj]; html += `<tr class="border-b border-slate-600/50 last:border-0"><td class="py-1 font-bold text-slate-300">${proj}</td><td class="text-center text-slate-400"><span class="text-white">${data.tY}</span>/${data.tTot}</td><td class="text-center text-slate-400 text-white">${data.cY}</td><td class="text-center text-slate-400"><span class="text-white">${data.vY}</span>/${data.vTot}</td></tr>`; } }
-           html += '</table>';
-           container.innerHTML = html;
-           container.classList.remove('animate-pulse');
-           
-           // BUILD REMINDER MESSAGE
-           let msg = "";
-           if(res.pending && res.pending.length > 0) { 
-               const list = res.pending.join('\n'); 
-               msg = `Hello👋, gentle reminder for volunteers of these trainees to update their attendance by tomorrow:\n${list}\n\nVolunteers please update your own attendance as well, Thank You!!🙏`; 
-           } else { 
-               msg = "Great news! All trainees have updated their attendance.\n\nVolunteers please ensure your own attendance is updated too, Thank You!!🙏"; 
-           }
-           outingReminders[index] = msg;
-           
-           // FORCE SHOW BUTTONS NOW THAT DATA IS LOADED
-           if(btnGroup) btnGroup.classList.remove('hidden');
+        renderConfigurableSummary();
+    }
 
-         } else { container.innerHTML = '<span class="text-red-400">Error loading stats</span>'; }
-       });
-     }
+    function renderConfigurableSummary() {
+        const rows = window.lastRawData || [];
+        const groupBy = document.getElementById('summaryGroupBy').value;
+        const tbody = document.getElementById('summaryTableBody');
+        tbody.innerHTML = '';
 
-     // --- MODAL & COPY LOGIC ---
-     function openReminderModal(index) { const msg = outingReminders[index]; if(!msg) return; document.getElementById('modalReminderText').value = msg; document.getElementById('reminderModal').classList.remove('hidden'); }
-     function closeReminderModal() { document.getElementById('reminderModal').classList.add('hidden'); }
-     function copyFromModal(btn) { performCopy(document.getElementById('modalReminderText').value, btn); }
-     function copyReminderDirect(index, btn) { const msg = outingReminders[index]; if(!msg) return; performCopy(msg, btn); }
-     function performCopy(text, btn) { navigator.clipboard.writeText(text).then(() => { const original = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check"></i>'; btn.classList.add('text-green-400', 'border-green-500'); setTimeout(() => { btn.innerHTML = original; btn.classList.remove('text-green-400', 'border-green-500'); }, 2000); }); }
+        const agg = {};
 
-     // ... [STANDARD FUNCTIONS: autoScrollAndFocus, setVolType, etc.] ...
-     function autoScrollAndFocus(input) { toggleSearchList(true); setTimeout(() => { input.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 300); }
-     function setVolType(type, btn) { selectedVolType = type; currentVolTypeRequest = type; allNames = []; document.getElementById('volNameList').innerHTML = ""; resetSearch(); document.querySelectorAll('.vol-type-btn').forEach(b => { b.classList.remove('bg-green-600', 'text-white', 'border-transparent'); b.classList.add('bg-slate-900', 'text-slate-300', 'border-slate-600'); }); btn.classList.remove('bg-slate-900', 'text-slate-300', 'border-slate-600'); btn.classList.add('bg-green-600', 'text-white', 'border-transparent'); document.getElementById('volNameSection').classList.remove('hidden'); document.getElementById('volFormContainer').classList.add('hidden'); if (type === 'volunteer') { document.getElementById('addNewVolContainer').classList.remove('hidden'); } else { document.getElementById('addNewVolContainer').classList.add('hidden'); } loadVolNames(type); }
-     function resetVolForm() { document.getElementById('volNameSection').classList.add('hidden'); document.getElementById('volFormContainer').classList.add('hidden'); document.getElementById('volSubmitBtn').innerText = "Update Attendance"; selectedVolType = null; currentVolTypeRequest = null; allNames = []; document.querySelectorAll('.vol-type-btn').forEach(b => { b.classList.remove('bg-green-600', 'text-white', 'border-transparent'); b.classList.add('bg-slate-900', 'text-slate-300', 'border-slate-600'); }); resetSearch(); }
-     function resetSearch() { const input = document.getElementById('volNameSearch'); input.value = ""; toggleSearchList(false); document.getElementById('clearSearchBtn').classList.add('hidden'); }
-     function loadVolNames(requestedType) { const url = document.getElementById('volSheetSelector').value; const loader = document.getElementById('nameLoader'); const input = document.getElementById('volNameSearch'); if(!url || !requestedType || url === "Select an Event") return; input.placeholder = "Loading names..."; input.disabled = true; loader.classList.remove('hidden'); apiCall('getNamesList', { sheetUrl: url, type: requestedType }).then(res => { if (currentVolTypeRequest !== requestedType) return; loader.classList.add('hidden'); input.disabled = false; input.placeholder = "Type to search..."; if(res.success) allNames = res.names; }); }
-     function toggleSearchList(show) { const list = document.getElementById('volNameList'); if(show) { list.classList.remove('hidden'); if(document.getElementById('volNameSearch').value.length > 0) filterNames(); } else { setTimeout(() => list.classList.add('hidden'), 200); } }
-     function clearSearch() { document.getElementById('volNameSearch').value = ""; filterNames(); document.getElementById('volFormContainer').classList.add('hidden'); document.getElementById('clearSearchBtn').classList.add('hidden'); }
-     function filterNames() { const input = document.getElementById('volNameSearch'); const filter = input.value.toLowerCase(); const list = document.getElementById('volNameList'); const clearBtn = document.getElementById('clearSearchBtn'); if(filter.length > 0) { list.classList.remove('hidden'); clearBtn.classList.remove('hidden'); } else { list.classList.add('hidden'); clearBtn.classList.add('hidden'); return; } list.innerHTML = ""; const matches = allNames.filter(n => n.toLowerCase().includes(filter)); matches.forEach(name => { const li = document.createElement('li'); li.className = "px-4 py-3 bg-slate-800 text-slate-200 border-b border-slate-600 hover:bg-cyan-600 hover:text-white cursor-pointer text-sm transition-colors last:border-0"; li.innerText = name; li.onmousedown = () => selectName(name); list.appendChild(li); }); if(matches.length === 0) { const li = document.createElement('li'); li.className = "px-4 py-3 text-sm text-slate-500 italic"; li.innerText = "No matches found."; list.appendChild(li); } }
-     function selectName(name) { document.getElementById('volNameSearch').value = name; document.getElementById('volNameList').classList.add('hidden'); loadVolData(name, false); }
-     function showAddNewForm() { const input = document.getElementById('volNameSearch'); input.value = ""; document.getElementById('volNameList').classList.add('hidden'); loadVolData(null, true); }
-     function getValueFuzzy(dataObj, lookupKey) { if (!dataObj) return ""; if (dataObj[lookupKey] !== undefined) return dataObj[lookupKey]; const cleanLookup = lookupKey.toLowerCase().replace(/[^a-z0-9]/g, ""); for (let key in dataObj) { const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, ""); if (cleanKey === cleanLookup) return dataObj[key]; if (cleanLookup.includes("caregiver") && cleanKey.includes("caregiver")) return dataObj[key]; } return ""; }
-     function toggleDependentFields(el) { const val = el.value; const deps = document.querySelectorAll('.attendance-dependent'); deps.forEach(d => { if(val === 'N') d.classList.add('hidden'); else d.classList.remove('hidden'); }); }
-     function toggleProjectList(show) { const list = document.getElementById('projectList'); if(show) { list.classList.remove('hidden'); filterProjects(); } else { setTimeout(() => list.classList.add('hidden'), 200); } }
-     function filterProjects() { const input = document.getElementById('newVolProjectSearch'); const filter = input.value.toLowerCase(); const list = document.getElementById('projectList'); list.innerHTML = ""; const matches = allProjects.filter(p => p.toLowerCase().includes(filter)); matches.forEach(proj => { const li = document.createElement('li'); li.className = "px-4 py-3 bg-slate-800 text-slate-200 border-b border-slate-600 hover:bg-cyan-600 hover:text-white cursor-pointer text-sm transition-colors last:border-0"; li.innerText = proj; li.onmousedown = () => selectProject(proj); list.appendChild(li); }); if(matches.length === 0) { const li = document.createElement('li'); li.className = "px-4 py-3 text-sm text-slate-500 italic"; li.innerText = "No matches found."; list.appendChild(li); } }
-     function selectProject(proj) { document.getElementById('newVolProjectSearch').value = proj; document.getElementById('projectList').classList.add('hidden'); }
-     function loadVolData(name, isManualNew) { const url = document.getElementById('volSheetSelector').value; const container = document.getElementById('volFormContainer'); const fieldsDiv = document.getElementById('dynamicFields'); const title = document.getElementById('formTitle'); const submitBtn = document.getElementById('volSubmitBtn'); const projectContainer = document.getElementById('newVolProjectContainer'); container.classList.remove('hidden'); fieldsDiv.innerHTML = '<div class="text-center"><div class="loader inline-block"></div></div>'; if (isManualNew) { title.innerText = "Add New Volunteer"; submitBtn.innerText = "Add New Volunteer & Update Attendance"; projectContainer.classList.remove('hidden'); document.getElementById('newVolProjectSearch').value = ""; document.getElementById('newVolProjectSearch').required = true; } else { title.innerText = "Loading..."; submitBtn.innerText = "Update Attendance"; projectContainer.classList.add('hidden'); document.getElementById('newVolProjectSearch').required = false; } apiCall('getPersonData', { sheetUrl: url, type: selectedVolType, name: name }).then(res => { fieldsDiv.innerHTML = ''; if(res.success) { const data = res.data; const config = res.config; const meetingOpts = res.meetingOpts || []; const dismissalOpts = res.dismissalOpts || []; const isNew = res.isNew || isManualNew; allProjects = res.projectOpts || []; title.innerHTML = isNew ? `Add New: <span class="text-green-400">Volunteer</span>` : `Update: <span class="text-blue-400">${name}</span>`; if(isNew) submitBtn.innerText = "Add New Volunteer & Update Attendance"; else submitBtn.innerText = "Update Attendance"; let fieldsToShow = (config && config.length > 0) ? config : res.headers.map(h => h.replace(/\[.*?\]/g,"").trim()); if (isNew) { const nameFieldExists = fieldsToShow.some(f => f.toLowerCase().includes("name")); if (!nameFieldExists) { const rawNameHeader = res.headers.find(h => h.toLowerCase().includes("name")) || "Volunteer Name"; fieldsToShow.unshift(rawNameHeader.replace(/\[.*?\]/g,"").trim()); } } fieldsToShow.forEach(header => { let val = isNew ? "" : (getValueFuzzy(data, header)); let cleanH = header.toLowerCase(); let isNameField = cleanH.includes("name"); if(isNew && cleanH.includes("project")) return; let isReadOnly = isNameField && !isNew; if(isNew && isNameField) val = ""; if(!isNew && isNameField) val = name; let inputHtml = ""; let wrapperClass = "mb-1"; if (!isNameField && !cleanH.includes("attending")) { wrapperClass += " attendance-dependent"; } if (cleanH.includes("attending")) { inputHtml = ` <select name="${header}" onchange="toggleDependentFields(this)" class="w-full bg-slate-900 border border-slate-600 text-white rounded p-2 text-sm focus:border-green-500"> <option value="" ${val===""?"selected":""}>Select...</option> <option value="Y" ${val.toLowerCase()==="y"?"selected":""}>Y (Yes)</option> <option value="N" ${val.toLowerCase()==="n"?"selected":""}>N (No)</option> </select>`; } else if (cleanH.includes("meeting location") || cleanH.includes("dismissal location")) { const isDismissal = cleanH.includes("dismissal"); const optionsList = isDismissal ? dismissalOpts : meetingOpts; const placeholder = isDismissal ? "Select Dismissal..." : "Select Meeting..."; let optionsHtml = optionsList.map(opt => { const isSelected = val.toString().trim().toLowerCase() === opt.toString().trim().toLowerCase(); return `<option value="${opt}" ${isSelected ? "selected" : ""}>${opt}</option>`; }).join(""); const valTrimmed = val.toString().trim(); if (valTrimmed !== "") { const listHasValue = optionsList.some(opt => opt.toString().trim().toLowerCase() === valTrimmed.toLowerCase()); if (!listHasValue) { optionsHtml += `<option value="${val}" selected>${val} (Current)</option>`; } } inputHtml = ` <select name="${header}" class="w-full bg-slate-900 border border-slate-600 text-white rounded p-2 text-sm focus:border-green-500"> <option value="">${placeholder}</option> ${optionsHtml} </select>`; } else { let type = "text"; if(cleanH.includes("date")) type = "date"; if(cleanH.includes("time")) type = "time"; inputHtml = `<input name="${header}" type="${type}" value="${val}" ${isReadOnly ? 'readonly' : ''} class="w-full bg-slate-900 border ${isReadOnly ? 'border-slate-700 text-slate-500' : 'border-slate-600 text-white focus:border-green-500'} rounded p-2 text-sm [color-scheme:dark]">`; } fieldsDiv.innerHTML += `<div class="${wrapperClass}"><label class="block text-xs font-bold text-slate-400 mb-1">${header}</label>${inputHtml}</div>`; }); const attSelect = document.querySelector('select[name*="Attending"], select[name*="attending"]'); if(attSelect) toggleDependentFields(attSelect); } else { fieldsDiv.innerHTML = '<div class="text-red-400">Error: ' + res.message + '</div>'; } }).getPersonData(url, selectedVolType, name); }
-     function submitAttendance(e) { e.preventDefault(); const btn = document.getElementById('volSubmitBtn'); const status = document.getElementById('volFormStatus'); const formEl = document.getElementById('attendanceForm'); btn.disabled = true; btn.innerText = "Saving..."; const formData = new FormData(formEl); let dataObj = {}; formData.forEach((value, key) => dataObj[key] = value); let target = document.getElementById('volNameSearch').value; if (!target || target === "") { for (let k in dataObj) { if (k.toLowerCase().includes("name")) { target = dataObj[k]; break; } } } const payload = { sheetUrl: document.getElementById('volSheetSelector').value, type: selectedVolType, data: dataObj, targetName: target }; apiCall('submitAttendanceData', payload).then(res => { btn.disabled = false; btn.innerText = "Update Attendance"; showFlashMessage('volFormStatus', res.message, res.success ? 'success' : 'error'); if(res.success && selectedVolType === 'volunteer') { if(res.message.includes("added")) { resetVolForm(); document.getElementById('volNameSearch').value = ""; } const url = document.getElementById('volSheetSelector').value; apiCall('getNamesList', { sheetUrl: url, type: 'volunteer' }).then(r => { if(r.success) allNames = r.names; }); } }); }
-     function handlePair() { const url = document.getElementById('commSheetSelector').value; const btn = document.getElementById('scrubBtn'); const status = document.getElementById('scrubStatus'); if(!url || url.includes("Select")) return alert("Select a sheet first"); btn.disabled = true; btn.innerText = "Pairing..."; status.classList.add('hidden'); apiCall('runAutoPairing', { sheetUrl: url }).then(res => { btn.disabled = false; btn.innerText = "Pair Now"; showFlashMessage('scrubStatus', res.message, res.success ? 'success' : 'error'); }); }
-     function handleGroup() { const url = document.getElementById('commSheetSelector').value; const btn = document.getElementById('groupBtn'); if(!url || url.includes("Select")) return alert("Select a sheet first"); btn.disabled = true; btn.innerText = "Grouping..."; apiCall('runAutoGrouping', { sheetUrl: url }).then(res => { btn.disabled = false; btn.innerText = "Group Now"; showFlashMessage('scrubStatus', res.message, res.success ? 'success' : 'error'); }); }
-     function loadSettings() { const loader = document.getElementById('settingsLoader'); const content = document.getElementById('settingsContent'); loader.classList.remove('hidden'); content.classList.add('hidden'); apiCall('getAppSettings').then(savedSettings => { apiCall('getTemplateHeaders').then(res => { document.getElementById('settingsLoader').classList.add('hidden'); document.getElementById('settingsContent').classList.remove('hidden'); if(res.success) { renderSettingsCheckboxes(res.tHeaders, res.vHeaders, savedSettings); } else { alert("Error loading template headers: " + res.message); } }); }); }
-     function renderSettingsCheckboxes(tHeaders, vHeaders, saved) { const tContainer = document.getElementById('traineeColsContainer'); const vContainer = document.getElementById('volColsContainer'); tContainer.innerHTML = ''; vContainer.innerHTML = ''; tHeaders.forEach(h => { let checked = (saved.traineeCols.includes(h) || saved.traineeCols.length === 0) ? 'checked' : ''; tContainer.innerHTML += `<label class="flex items-center gap-2"><input type="checkbox" class="t-col-check accent-purple-500" value="${h}" ${checked}> <span class="text-slate-300">${h}</span></label>`; }); vHeaders.forEach(h => { let checked = (saved.volCols.includes(h) || saved.volCols.length === 0) ? 'checked' : ''; vContainer.innerHTML += `<label class="flex items-center gap-2"><input type="checkbox" class="v-col-check accent-purple-500" value="${h}" ${checked}> <span class="text-slate-300">${h}</span></label>`; }); }
-     function saveSettings() { const tCols = Array.from(document.querySelectorAll('.t-col-check:checked')).map(cb => cb.value); const vCols = Array.from(document.querySelectorAll('.v-col-check:checked')).map(cb => cb.value); const settings = { traineeCols: tCols, volCols: vCols }; showFlashMessage('settingsStatus', "Saving...", 'success'); apiCall('saveAppSettings', settings).then(res => { showFlashMessage('settingsStatus', res.message, 'success'); }); }
-     const modal = document.getElementById('createModal'); const modalPanel = document.getElementById('modalPanel'); function openModal() { modal.classList.remove('hidden'); setTimeout(() => { modal.classList.remove('opacity-0'); modalPanel.classList.remove('scale-95'); modalPanel.classList.add('scale-100'); }, 10); } function closeModal() { modal.classList.add('opacity-0'); modalPanel.classList.remove('scale-100'); modalPanel.classList.add('scale-95'); setTimeout(() => { modal.classList.add('hidden'); }, 300); } function handleCreate(e) { e.preventDefault(); const btn = document.getElementById('submitCreateBtn'); const stat = document.getElementById('createStatusArea'); btn.disabled = true; btn.innerText = "Processing..."; showFlashMessage('createStatusArea', "Creating...", 'success'); const form = document.getElementById('outingForm'); const formData = { eventName: document.getElementById('eventName').value, eventDate: document.getElementById('eventDate').value, meetingLocs: Array.from(document.getElementsByName('meetingLoc')).map(i=>i.value), meetingTimes: Array.from(document.getElementsByName('meetingTime')).map(i=>i.value), dismissalLocs: Array.from(document.getElementsByName('dismissalLoc')).map(i=>i.value), dismissalTimes: Array.from(document.getElementsByName('dismissalTime')).map(i=>i.value), }; apiCall('createOuting', formData).then(res => { btn.disabled = false; btn.innerText = "Generate"; if(res.success) { showFlashMessage('createStatusArea', "Success! Folder Created.", 'success'); closeModal(); loadSheets('comm'); showFlashMessage('commGlobalStatus', "Outing Created Successfully!", 'success'); } else { showFlashMessage('createStatusArea', res.message, 'error'); } }); }
-   </script>
+        rows.forEach(r => {
+            let key = "Unknown";
+            if (groupBy === 'item') {
+                key = r.item;
+            } else if (groupBy === 'userType') {
+                const match = r.customer.match(/\[(.*?)(?:[:\]])/);
+                key = match ? match[1] : "Other";
+            }
+
+            if (!agg[key]) agg[key] = { count: 0, total: 0 };
+            agg[key].count += (groupBy === 'item' ? r.qty : 1);
+            agg[key].total += r.total;
+        });
+
+        Object.entries(agg).forEach(([key, val]) => {
+            tbody.innerHTML += `
+                <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                    <td class="px-4 py-2 font-medium text-gray-900 dark:text-white">${key}</td>
+                    <td class="px-4 py-2">${val.count}</td>
+                    <td class="px-4 py-2">$${val.total.toFixed(2)}</td>
+                </tr>
+            `;
+        });
+    }
+
+    function filterOrders() {
+        const search = document.getElementById('orderSearchInput').value.toLowerCase().replace(/\s/g, '');
+        const container = document.getElementById('orderListContainer');
+        
+        const filtered = allOrders.filter(o => {
+            const rawId = o.orderId.toLowerCase();
+            const rawName = o.customer.toLowerCase().replace(/\s/g, '');
+            const rawContact = String(o.contact).replace(/\D/g, '');
+            return rawId.includes(search) || rawName.includes(search) || rawContact.includes(search);
+        });
+
+        if (filtered.length === 0) {
+             container.innerHTML = '<p class="text-center text-gray-400 py-4">No orders found.</p>';
+             return;
+        }
+
+        container.innerHTML = filtered.map(o => {
+            const isCollected = o.status === "Collected";
+            const itemsList = o.items.map(i => `<li><span class="font-bold">${i.qty}x</span> ${i.name}</li>`).join('');
+            const actionBtn = isCollected 
+                ? `<button onclick="updateStatus('${o.orderId}', 'Pending')" class="text-xs bg-gray-500 text-white px-3 py-2 rounded hover:bg-gray-600 shadow"><i class="fas fa-undo"></i> Undo</button>`
+                : `<button onclick="updateStatus('${o.orderId}', 'Collected')" class="text-xs bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700 shadow"><i class="fas fa-check"></i> Mark Collected</button>`;
+
+            return `
+            <div class="bg-white dark:bg-gray-800 p-4 rounded shadow border-l-4 ${isCollected ? 'border-green-500' : 'border-yellow-500'}">
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <span class="font-mono font-bold text-gray-700 dark:text-gray-200 text-lg">${o.orderId}</span>
+                        <span class="ml-2 text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wide ${isCollected ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300'}">${o.status}</span>
+                    </div>
+                    ${actionBtn}
+                </div>
+                <div class="font-bold text-gray-800 dark:text-gray-100">${o.customer}</div>
+                <div class="text-sm text-gray-500 dark:text-gray-400 mb-2"><i class="fas fa-phone-alt text-xs mr-1"></i> ${o.contact}</div>
+                <ul class="list-disc pl-4 text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 p-2 rounded border border-gray-100 dark:border-gray-600">
+                    ${itemsList}
+                </ul>
+            </div>`;
+        }).join('');
+    }
+
+    async function updateStatus(id, newStatus) {
+        const actionName = newStatus === 'Collected' ? 'Mark as Collected' : 'Undo (Mark as Pending)';
+        if (!confirm(`${actionName} for ${id}?`)) return;
+        try {
+            const order = allOrders.find(o => o.orderId === id);
+            if (order) order.status = newStatus;
+            filterOrders();
+            await apiCall('UPDATE_ORDER_STATUS', { orderId: id, status: newStatus });
+        } catch(e) {
+            alert("Error updating status");
+            loadAdminOrders();
+        }
+    }
+
+    function renderAdminProducts() {
+        const list = document.getElementById('adminProductList');
+        if (appData.products.length === 0) list.innerHTML = "<p class='text-gray-500 text-sm'>No products added.</p>";
+        else {
+            list.innerHTML = appData.products.map((p) => `
+            <div class="flex justify-between items-center bg-gray-50 dark:bg-gray-700 p-2 rounded border dark:border-gray-600 text-sm" data-id="${p.id}">
+                <div class="handle cursor-move px-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                     <i class="fas fa-grip-lines"></i>
+                </div>
+                <div class="flex-1 px-3"><div class="font-bold text-gray-700 dark:text-white">${p.name}</div><div class="text-xs text-gray-500 dark:text-gray-400">$${p.price}</div></div>
+                <button onclick="deleteProduct('${p.id}')" class="text-red-500 font-bold px-2">X</button>
+            </div>`).join('');
+            
+            if(typeof Sortable !== 'undefined') {
+                if(sortableInstance) sortableInstance.destroy();
+                sortableInstance = new Sortable(list, {
+                    handle: '.handle',
+                    animation: 150,
+                    ghostClass: 'bg-blue-100'
+                });
+            }
+        }
+    }
+
+    function openEventSheet() {
+        if (appData.activeSheetId) window.open(`https://docs.google.com/spreadsheets/d/${appData.activeSheetId}`, '_blank');
+        else alert("No active sheet available.");
+    }
+
+    async function saveListing() {
+        if (!confirm("Save this display order?")) return;
+        const domItems = document.querySelectorAll('#adminProductList > div');
+        const idList = Array.from(domItems).map(el => el.getAttribute('data-id'));
+        await apiCall('SAVE_ORDER', idList);
+        alert("Listing Saved!");
+    }
+    
+    async function resetOrder() {
+        if (!confirm("Reset to default Alphabetical order?")) return;
+        await apiCall('RESET_ORDER');
+        loadAppData().then(openAdminPanel);
+    }
+    async function saveSettings() {
+        const paynowVal = document.getElementById('editPayment').value;
+        if (!/^\d{8}$/.test(paynowVal)) { alert("PayNow Number must be exactly 8 digits."); return; }
+        await apiCall('UPDATE_CONFIG', { 
+            intro: document.getElementById('editIntroRich').innerHTML, 
+            appTitle: document.getElementById('editAppTitle').value,
+            
+            paymentInfo: paynowVal, 
+            closingDate: document.getElementById('editClosingDate').value,
+            adminPin: document.getElementById('editPin').value,
+            emailIntro: document.getElementById('editEmailIntro').value,
+            emailFooter: document.getElementById('editEmailFooter').value,
+            bannerImageId: appData.config.bannerImageId 
+        });
+        alert("Saved!"); loadAppData();
+    }
+    async function addProduct() {
+        const name = document.getElementById('newProdName').value;
+        const price = document.getElementById('newProdPrice').value;
+        const file = document.getElementById('newProdImg').files[0];
+        if (!name || !price || !file) return alert("All fields required");
+        showLoading(true, "Compressing & Uploading...");
+        const base64 = await compressImage(file, 0.5); 
+        await apiCall('ADD_PRODUCT', { name, price, imageBase64: base64, mimeType: 'image/jpeg' });
+        document.getElementById('newProdName').value = ''; document.getElementById('newProdPrice').value = ''; document.getElementById('newProdImg').value = '';
+        alert("Product Added!"); loadAppData().then(openAdminPanel);
+    }
+    async function deleteProduct(id) {
+        if(confirm("Delete product?")) { await apiCall('DELETE_PRODUCT', id); loadAppData().then(openAdminPanel); }
+    }
+    async function createNewEvent() {
+        const name = document.getElementById('newEventName').value;
+        if (name && confirm("Create new event?")) { await apiCall('CREATE_EVENT', name); alert("Event Created!"); loadAppData().then(openAdminPanel); }
+    }
+    function adminLogout() { ADMIN_PIN = null; router('home'); }
+    function router(view) {
+        document.querySelectorAll('main > section').forEach(el => el.classList.add('hidden'));
+        document.getElementById(`view-${view}`).classList.remove('hidden');
+        window.scrollTo(0,0);
+        if (view === 'checkout') generatePayNowQR();
+    }
+    function showLoading(show, text="Processing...") {
+        const el = document.getElementById('loadingOverlay');
+        document.getElementById('loadingText').innerText = text;
+        show ? el.classList.remove('hidden') : el.classList.add('hidden');
+    }
+    function compressImage(file, quality=0.5) {
+        return new Promise((resolve, reject) => {
+            const MAX_WIDTH = 1000;
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (e) => {
+                const img = new Image();
+                img.src = e.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let w = img.width, h = img.height;
+                    if (w > MAX_WIDTH) { h *= MAX_WIDTH / w; w = MAX_WIDTH; }
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', quality)); 
+                };
+            };
+            reader.onerror = reject;
+        });
+    }
+    
+    // NEW: Open Folder function that was missing in previous steps
+    function openEventFolder() {
+        if (appData.activeFolderId) window.open(`https://drive.google.com/drive/folders/${appData.activeFolderId}`, '_blank');
+        else alert("No active folder available.");
+    }
+</script>
 </body>
 </html>
