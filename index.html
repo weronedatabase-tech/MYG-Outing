@@ -48,6 +48,7 @@
         .editor-toolbar button:hover, .editor-toolbar label:hover { background: #eee; }
         .editor-content { min-height: 150px; overflow-y: auto; }
         
+        /* Color Picker Reset */
         input[type="color"] {
             -webkit-appearance: none;
             border: none;
@@ -171,19 +172,15 @@
         <!-- COMPACT QR SECTION -->
         <div class="bg-white dark:bg-gray-800 border-2 border-purple-800 dark:border-purple-600 p-3 rounded-lg mb-4 shadow-sm">
             <div class="flex flex-row items-center gap-4">
-                <!-- Left: QR (Image for long-press) and Download -->
+                <!-- Left: QR and Download -->
                 <div class="flex flex-col items-center gap-2 shrink-0">
                     <div class="bg-white p-1 rounded border dark:border-gray-600">
-                        <!-- Hidden Canvas for generation -->
-                        <canvas id="qrCanvas" class="hidden"></canvas>
-                        <!-- Image tag for display and long-press -->
-                        <img id="qrImage" class="w-24 h-24" alt="QR Code">
+                        <canvas id="qrCanvas" class="w-24 h-24"></canvas>
                     </div>
-                    <!-- Download Button -->
+                    <!-- Download Button Below QR -->
                     <a id="downloadQrBtn" href="#" download="paynow_qr.png" class="w-full text-center bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 px-2 py-1 rounded text-xs font-bold hover:bg-purple-200 dark:hover:bg-purple-800">
                         <i class="fas fa-download"></i> Save QR
                     </a>
-                    <p class="text-[10px] text-gray-400 text-center leading-tight w-24">If button fails, long-press QR to save</p>
                 </div>
 
                 <!-- Right: Details -->
@@ -383,7 +380,14 @@
                 </div>
                 <div id="adminProductList" class="space-y-2 mb-6"></div>
                 <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded border dark:border-gray-600">
-                    <p class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">ADD NEW PRODUCT</p>
+                    <!-- NEW: Prominent Add Header -->
+                    <div class="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200 dark:border-gray-600">
+                         <div class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
+                             <i class="fas fa-plus"></i>
+                         </div>
+                         <span class="font-bold text-blue-800 dark:text-blue-300 text-sm uppercase tracking-wide">Add New Product</span>
+                    </div>
+
                     <input type="text" id="newProdName" placeholder="Product Name" class="w-full p-2 border rounded mb-2 text-sm dark:bg-gray-800 dark:border-gray-500 dark:text-white">
                     <input type="number" id="newProdPrice" placeholder="Price ($)" class="w-full p-2 border rounded mb-2 text-sm dark:bg-gray-800 dark:border-gray-500 dark:text-white">
                     <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Product Image</label>
@@ -658,17 +662,10 @@
         document.getElementById('paynowTotalDisplay').innerText = `$${totalAmount.toFixed(2)}`;
         document.getElementById('paynowNumberDisplay').innerText = uen ? "+65 " + uen : "Not Set";
         document.getElementById('paynowRefDisplay').innerText = currentOrderId;
-        
-        const canvas = document.getElementById('qrCanvas');
-        const img = document.getElementById('qrImage');
-        
         if (!uen || totalAmount <= 0) return;
-        
         const payload = createPayNowPayload(uen, totalAmount, currentOrderId);
-        new QRious({ element: canvas, value: payload, size: 200, level: 'H' });
-        
-        // Convert to Image for Long-Press
-        img.src = canvas.toDataURL("image/png");
+        new QRious({ element: document.getElementById('qrCanvas'), value: payload, size: 200, level: 'H' });
+        const canvas = document.getElementById('qrCanvas');
         document.getElementById('downloadQrBtn').href = canvas.toDataURL("image/png");
     }
     function createPayNowPayload(number, amount, refId) {
