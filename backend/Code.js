@@ -1,7 +1,7 @@
 // ==========================================
 // ENVIRONMENT DATA MAP 
 // Maps from global ENV variable (defined in config.js) 
-// to their respective Parent and Template Folder IDs.
+// to their respective Parent and Template Folder IDs. 
 // ==========================================
 
 const ENV_CONFIG = {
