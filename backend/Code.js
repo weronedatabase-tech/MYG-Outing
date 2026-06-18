@@ -1,5 +1,5 @@
 // ==========================================
-// ENVIRONMENT DATA Map 
+// ENVIRONMENT DATA MAP
 // Evaluated lazily to prevent Google Apps Script load-order Reference Errors 
 // ==========================================
 
@@ -1059,4 +1059,4 @@ if (!cell) {
  return { success: true, message: "Attendance updated successfully!" };
 }
 } catch(e) { return { success: false, message: e.toString() }; }
-} 
+}
