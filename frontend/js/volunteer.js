@@ -1,6 +1,55 @@
 let currentActiveVols = [];
 let currentVolPairedValue = [];
 let originalVolData = {};
+let preloadedNames = { trainee: [], volunteer: [] };
+let isNamesLoaded = { trainee: false, volunteer: false };
+let personDataCache = {};
+
+function preloadPersonData(name, type) {
+    const url = document.getElementById('volSheetSelector').value;
+    if (!url || !type) return;
+    const cacheKey = `${type}_${name || 'NEW'}`;
+    if (!personDataCache[cacheKey]) {
+        personDataCache[cacheKey] = apiCall('getPersonData', { url: url, type: type, name: name });
+    }
+}
+
+function preloadNames(url) {
+    if (!url) return;
+    preloadedNames = { trainee: [], volunteer: [] };
+    isNamesLoaded = { trainee: false, volunteer: false };
+    
+    apiCall('getNamesList', { url: url, type: 'trainee' }).then(res => {
+        if(res.success) {
+            preloadedNames.trainee = res.names;
+            isNamesLoaded.trainee = true;
+            if (currentVolTypeRequest === 'trainee') applyPreloadedNames();
+        }
+    });
+
+    apiCall('getNamesList', { url: url, type: 'volunteer' }).then(res => {
+        if(res.success) {
+            preloadedNames.volunteer = res.names;
+            isNamesLoaded.volunteer = true;
+            if (currentVolTypeRequest === 'volunteer') applyPreloadedNames();
+        }
+    });
+}
+
+function applyPreloadedNames() {
+    if (!currentVolTypeRequest) return;
+    if (isNamesLoaded[currentVolTypeRequest]) {
+        allNames = preloadedNames[currentVolTypeRequest];
+        const list = document.getElementById('volNameList');
+        const input = document.getElementById('volNameSearch');
+        if (input && input.value.length > 0) {
+            filterNames();
+        } else if (list) {
+            list.innerHTML = "";
+            list.classList.add('hidden');
+        }
+    }
+}
 
 // MPA Specific Loader for Volunteer App to prevent pulling the massive comm.js bundle
 function loadVolunteerEvents() {
@@ -38,8 +87,9 @@ function loadVolunteerEvents() {
           if (nameEl) nameEl.innerText = selectedItem.displayName || selectedItem.fullName || "Upcoming Event";
           if (dateTextEl) dateTextEl.innerText = selectedItem.formattedDate || "N/A";
           
-          if (oldUrl !== newUrl && typeof resetVolForm === 'function') {
-              resetVolForm();
+          if (oldUrl !== newUrl) {
+              if (typeof resetVolForm === 'function') resetVolForm();
+              preloadNames(newUrl);
           }
       }
   };
@@ -95,7 +145,8 @@ btn.classList.add('bg-green-600', 'text-white', 'border-transparent');
 document.getElementById('volNameSection').classList.remove('hidden'); 
 document.getElementById('volFormContainer').classList.add('hidden'); 
 if (type === 'volunteer') { 
-document.getElementById('addNewVolContainer').classList.remove('hidden'); 
+document.getElementById('addNewVolContainer').classList.remove('hidden');
+preloadPersonData(null, type); 
 } else { 
 document.getElementById('addNewVolContainer').classList.add('hidden'); 
 } 
@@ -128,27 +179,25 @@ toggleClearBtn('volNameSearch');
 }
 
 function loadVolNames(requestedType) { 
-const url = document.getElementById('volSheetSelector').value; 
-const input = document.getElementById('volNameSearch'); 
-const list = document.getElementById('volNameList');
-if(!url || !requestedType || url === "Select an Event") return; 
+    const url = document.getElementById('volSheetSelector').value; 
+    const input = document.getElementById('volNameSearch'); 
+    const list = document.getElementById('volNameList'); 
+    if(!url || !requestedType || url === "Select an Event") return; 
 
-input.placeholder = "Loading names..."; 
-input.disabled = true; 
+    input.disabled = false;
+    input.placeholder = "Type to search...";
+    
+    if (isNamesLoaded[requestedType]) {
+        allNames = preloadedNames[requestedType];
+        list.innerHTML = "";
+        list.classList.add('hidden');
+        if (input.value.length > 0) filterNames();
+        return;
+    }
 
-list.innerHTML = Array(5).fill('<li class="px-4 py-3 border-b border-gray-200 dark:border-zinc-700"><div class="animate-pulse h-4 bg-gray-200 dark:bg-zinc-700 rounded w-2/3"></div></li>').join('');
-list.classList.remove('hidden');
-
-apiCall('getNamesList', { url: url, type: requestedType }).then(res => { 
-if (currentVolTypeRequest !== requestedType) return; 
-input.disabled = false; 
-input.placeholder = "Type to search..."; 
-
-list.innerHTML = ""; 
-list.classList.add('hidden'); 
-
-if(res.success) allNames = res.names; 
-}); 
+    allNames = [];
+    list.innerHTML = Array(3).fill('<li class="px-4 py-3 border-b border-gray-200 dark:border-zinc-700"><div class="animate-pulse h-4 bg-gray-200 dark:bg-zinc-700 rounded w-2/3"></div></li>').join('');
+    list.classList.remove('hidden');
 }
 
 function toggleSearchList(show) { 
@@ -172,30 +221,37 @@ if(formEl) formEl.classList.add('hidden');
 }
 
 function filterNames() { 
-const input = document.getElementById('volNameSearch'); 
-const filter = input.value.toLowerCase(); 
-const list = document.getElementById('volNameList'); 
-if(filter.length > 0) { 
-list.classList.remove('hidden'); 
-} else { 
-list.classList.add('hidden'); 
-return; 
-} 
-list.innerHTML = ""; 
-const matches = allNames.filter(n => n.toLowerCase().includes(filter)); 
-matches.forEach(name => { 
-const li = document.createElement('li'); 
-li.className = "px-4 py-3 bg-white dark:bg-zinc-800 text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-zinc-700 hover:bg-cyan-600 hover:text-white cursor-pointer text-sm transition-colors last:border-0"; 
-li.innerText = name; 
-li.onmousedown = () => selectName(name); 
-list.appendChild(li); 
-}); 
-if(matches.length === 0) { 
-const li = document.createElement('li'); 
-li.className = "px-4 py-3 text-sm text-gray-500 dark:text-gray-400 italic bg-white dark:bg-zinc-800"; 
-li.innerText = "No matches found."; 
-list.appendChild(li); 
-} 
+    const input = document.getElementById('volNameSearch'); 
+    const filter = input.value.toLowerCase(); 
+    const list = document.getElementById('volNameList'); 
+    if(filter.length > 0) { 
+        list.classList.remove('hidden'); 
+    } else { 
+        list.classList.add('hidden'); 
+        return; 
+    } 
+    list.innerHTML = ""; 
+    
+    if (currentVolTypeRequest && !isNamesLoaded[currentVolTypeRequest]) {
+        list.innerHTML = Array(2).fill('<li class="px-4 py-3 border-b border-gray-200 dark:border-zinc-700"><div class="animate-pulse h-4 bg-gray-200 dark:bg-zinc-700 rounded w-2/3"></div></li>').join('');
+        return;
+    }
+    
+    const matches = allNames.filter(n => n.toLowerCase().includes(filter)); 
+    matches.forEach((name, index) => {
+        if (index < 2) preloadPersonData(name, currentVolTypeRequest); 
+        const li = document.createElement('li'); 
+        li.className = "px-4 py-3 bg-white dark:bg-zinc-800 text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-zinc-700 hover:bg-cyan-600 hover:text-white cursor-pointer text-sm transition-colors last:border-0"; 
+        li.innerText = name; 
+        li.onmousedown = () => selectName(name); 
+        list.appendChild(li); 
+    }); 
+    if(matches.length === 0) { 
+        const li = document.createElement('li'); 
+        li.className = "px-4 py-3 text-sm text-gray-500 dark:text-gray-400 italic bg-white dark:bg-zinc-800"; 
+        li.innerText = "No matches found."; 
+        list.appendChild(li); 
+    } 
 }
 
 function selectName(name) { 
@@ -390,7 +446,9 @@ projectContainer.classList.add('hidden');
 document.getElementById('newVolProjectSearch').required = false; 
 } 
 
-apiCall('getPersonData', { url: url, type: selectedVolType, name: name }).then(res => { 
+const cacheKey = `${selectedVolType}_${name || 'NEW'}`;
+let fetchPromise = personDataCache[cacheKey] || apiCall('getPersonData', { url: url, type: selectedVolType, name: name });
+fetchPromise.then(res => { 
 fieldsDiv.innerHTML = ''; 
 if(res.success) { 
     const data = res.data; 
@@ -531,25 +589,29 @@ if (k.toLowerCase().includes("name") || k.toLowerCase().includes("project")) {
 }
 }
 
-showOverlay('loading', 'Saving Attendance...');
+// Optimistic UI: Show success instantly
+showOverlay("success", "Attendance submitted securely.");
+const url = document.getElementById("volSheetSelector").value;
+const isNewAddition = document.getElementById("formTitle").innerText.includes("Add New");
 
-const payload = { sheetUrl: document.getElementById('volSheetSelector').value, type: selectedVolType, data: deltaObj, targetName: target }; 
+if (selectedVolType === "volunteer" && isNewAddition) {
+    resetVolForm();
+    document.getElementById("volNameSearch").value = "";
+}
 
-apiCall('submitAttendanceData', payload).then(res => { 
+setTimeout(() => { closeOverlay(); }, 1200);
+
+const payload = { sheetUrl: url, type: selectedVolType, data: deltaObj, targetName: target }; 
+
+// Background sync (Fire and forget)
+apiCall("submitAttendanceData", payload).then(res => { 
 if(res.success) {
-    showOverlay('success', res.message);
-    if(selectedVolType === 'volunteer') { 
-        if(res.message.includes("added")) { 
-            resetVolForm(); 
-            document.getElementById('volNameSearch').value = ""; 
-        } 
-        const url = document.getElementById('volSheetSelector').value; 
-        setTimeout(() => {
-            apiCall('getNamesList', { url: url, type: 'volunteer' }).then(r => { if(r.success) allNames = r.names; }); 
-        }, 500);
+    if(selectedVolType === "volunteer") { 
+        apiCall("getNamesList", { url: url, type: "volunteer" }).then(r => { if(r.success) allNames = r.names; }); 
     } 
 } else {
-    showOverlay('error', res.message);
+    console.error("Background sync failed:", res.message);
+    setTimeout(() => showOverlay("error", "Sync Error: " + res.message), 500);
 }
-}); 
+}).catch(e => console.error("Sync Error", e));
 }
