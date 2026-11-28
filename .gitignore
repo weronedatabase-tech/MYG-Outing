@@ -1,0 +1,8 @@
+node_modules/
+_site/
+server_runtime.log
+*.log
+.env
+.env.*
+.DS_Store
+backend/.clasp.json

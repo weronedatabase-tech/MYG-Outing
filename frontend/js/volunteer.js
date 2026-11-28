@@ -58,12 +58,14 @@ function loadVolunteerEvents() {
   const nameEl = document.getElementById('volEventName');
   const dateTextEl = document.getElementById('volEventDateText');
 
-  const renderSelectedEvent = (data) => {
+  const renderSelectedEvent = (rawData) => {
+      const data = window.filterActiveOutings ? window.filterActiveOutings(rawData) : (rawData || []);
       currentSheetList = data;
       if (!data || data.length === 0) {
           if (nameEl) nameEl.innerText = "No upcoming events";
           if (dateTextEl) dateTextEl.innerText = "N/A";
           if (hiddenInput) hiddenInput.value = "";
+          if (typeof resetVolForm === 'function') resetVolForm();
           return;
       }
 
@@ -88,6 +90,9 @@ function loadVolunteerEvents() {
           if (dateTextEl) dateTextEl.innerText = selectedItem.formattedDate || "N/A";
           
           if (oldUrl !== newUrl) {
+              if (typeof window.collabSetContext === 'function') {
+                  window.collabSetContext('volunteer', newUrl);
+              }
               if (typeof resetVolForm === 'function') resetVolForm();
               preloadNames(newUrl);
           }
@@ -99,13 +104,20 @@ function loadVolunteerEvents() {
   if (localDataStr) {
       try {
           const parsed = JSON.parse(localDataStr);
-          if (parsed && parsed.length > 0) {
-              renderSelectedEvent(parsed);
+          const activeParsed = window.filterActiveOutings ? window.filterActiveOutings(parsed) : parsed;
+          if (JSON.stringify(activeParsed) !== localDataStr) {
+              localStorage.setItem('myg_sheetList', JSON.stringify(activeParsed));
+          }
+          if (activeParsed && activeParsed.length > 0) {
+              renderSelectedEvent(activeParsed);
               if (spinner) spinner.classList.add('hidden');
               apiCall('getRecentOutingSheets', null).then(res => {
-                  if (res && res.success && JSON.stringify(res.data) !== localDataStr) {
-                      localStorage.setItem('myg_sheetList', JSON.stringify(res.data));
-                      renderSelectedEvent(res.data);
+                  if (res && res.success) {
+                      const activeRes = window.filterActiveOutings ? window.filterActiveOutings(res.data) : res.data;
+                      if (JSON.stringify(activeRes) !== JSON.stringify(activeParsed)) {
+                          localStorage.setItem('myg_sheetList', JSON.stringify(activeRes));
+                          renderSelectedEvent(activeRes);
+                      }
                   }
               });
               return;
@@ -119,8 +131,9 @@ function loadVolunteerEvents() {
       if (spinner) spinner.classList.add('hidden');
 
       if (res && res.success && res.data) {
-          localStorage.setItem('myg_sheetList', JSON.stringify(res.data));
-          renderSelectedEvent(res.data);
+          const activeRes = window.filterActiveOutings ? window.filterActiveOutings(res.data) : res.data;
+          localStorage.setItem('myg_sheetList', JSON.stringify(activeRes));
+          renderSelectedEvent(activeRes);
       } else {
           if (nameEl) nameEl.innerText = "Error loading event";
           if (dateTextEl) dateTextEl.innerText = (res && res.message) ? res.message : "Please refresh";
@@ -128,7 +141,7 @@ function loadVolunteerEvents() {
   });
 }
 
-function autoScrollAndFocus(input) { toggleSearchList(true); setTimeout(() => { input.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 300); }
+function autoScrollAndFocus(input) { toggleSearchList(true); }
 
 function setVolType(type, btn) { 
 selectedVolType = type; 
@@ -388,8 +401,8 @@ const hiddenInput = document.getElementById('volPairedHidden');
 if(!tagsContainer || !hiddenInput) return;
 
 tagsContainer.innerHTML = currentVolPairedValue.map(v => {
- const jsSafeVol = v.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '&quot;');
- return `<span class="bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-900/50 dark:text-teal-300 dark:border-teal-700/50 px-2 py-0.5 rounded text-xs flex items-center gap-1">${v} <i class="fa-solid fa-xmark cursor-pointer hover:text-red-500 ml-1" onclick="removeVolPaired('${jsSafeVol}')"></i></span>`;
+ const jsSafeVol = window.escapeJsAttr(v);
+ return `<span class="bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-900/50 dark:text-teal-300 dark:border-teal-700/50 px-2 py-0.5 rounded text-xs flex items-center gap-1">${window.escapeHtml(v)} <i class="fa-solid fa-xmark cursor-pointer hover:text-red-500 ml-1" onclick="removeVolPaired('${jsSafeVol}')"></i></span>`;
 }).join('');
 
 if (currentVolPairedValue.length > 0) {
@@ -460,7 +473,7 @@ if(res.success) {
     const isNew = res.isNew || isManualNew; 
     allProjects = res.projectOpts || []; 
     
-    const htmlSafeName = name ? name.replace(/"/g, '&quot;') : '';
+    const htmlSafeName = window.escapeHtml(name || '');
     title.innerHTML = isNew ? `Add New: <span class="text-green-500">Volunteer</span>` : `Update: <span class="text-blue-500">${htmlSafeName}</span>`; 
     if(isNew) submitBtn.innerText = "Add New Volunteer & Update Attendance"; 
     else submitBtn.innerText = "Update Attendance"; 
@@ -477,34 +490,37 @@ if(res.success) {
     fieldsToShow.forEach(header => { 
         let rawVal = isNew ? "" : (getValueFuzzy(data, header)); 
         let val = rawVal != null ? String(rawVal) : "";
+        let safeHeader = window.escapeHtml(header);
+        let safeVal = window.escapeHtml(val);
         let cleanH = header.toLowerCase().replace(/[^a-z0-9]/g, ""); 
         let isNameField = cleanH.includes("name"); 
         if(isNew && cleanH.includes("project")) return; 
         let isReadOnly = isNameField && !isNew; 
-        if(isNew && isNameField) val = ""; 
-        if(!isNew && isNameField) val = name || ""; 
+        if(isNew && isNameField) { val = ""; safeVal = ""; }
+        if(!isNew && isNameField) { val = name || ""; safeVal = window.escapeHtml(val); }
         let inputHtml = ""; 
         let wrapperClass = "mb-1"; 
         if (!isNameField && !cleanH.includes("attending")) { wrapperClass += " attendance-dependent"; } 
         
         if (cleanH.includes("attending")) { 
-            inputHtml = ` <select name="${header}" onchange="toggleDependentFields(this)" class="w-full bg-gray-50 dark:bg-black border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white rounded p-2 text-sm focus:border-green-500 shadow-sm"> <option value="" ${val===""?"selected":""}>Select...</option> <option value="Y" ${val.toLowerCase()==="y"?"selected":""}>Y (Yes)</option> <option value="N" ${val.toLowerCase()==="n"?"selected":""}>N (No)</option> </select>`; 
+            inputHtml = ` <select name="${safeHeader}" onchange="toggleDependentFields(this)" class="w-full bg-gray-50 dark:bg-black border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white rounded p-2 text-sm focus:border-green-500 shadow-sm"> <option value="" ${val===""?"selected":""}>Select...</option> <option value="Y" ${val.toLowerCase()==="y"?"selected":""}>Y (Yes)</option> <option value="N" ${val.toLowerCase()==="n"?"selected":""}>N (No)</option> </select>`; 
         } else if (cleanH.includes("meetinglocation") || cleanH.includes("dismissallocation")) { 
             const isDismissal = cleanH.includes("dismissal"); 
             const optionsList = isDismissal ? dismissalOpts : meetingOpts; 
             const placeholder = isDismissal ? "Select Dismissal..." : "Select Meeting..."; 
             let optionsHtml = optionsList.map(opt => { 
                 const isSelected = val.toString().trim().toLowerCase() === opt.toString().trim().toLowerCase(); 
-                return `<option value="${opt.replace(/"/g, '&quot;')}" ${isSelected ? "selected" : ""}>${opt}</option>`; 
+                const safeOpt = window.escapeHtml(opt);
+                return `<option value="${safeOpt}" ${isSelected ? "selected" : ""}>${safeOpt}</option>`; 
             }).join(""); 
             const valTrimmed = val.toString().trim(); 
             if (valTrimmed !== "") { 
                 const listHasValue = optionsList.some(opt => opt.toString().trim().toLowerCase() === valTrimmed.toLowerCase()); 
                 if (!listHasValue) { 
-                    optionsHtml += `<option value="${val.replace(/"/g, '&quot;')}" selected>${val} (Current)</option>`; 
+                    optionsHtml += `<option value="${safeVal}" selected>${safeVal} (Current)</option>`; 
                 } 
             } 
-            inputHtml = ` <select name="${header}" class="w-full bg-gray-50 dark:bg-black border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white rounded p-2 text-sm focus:border-green-500 shadow-sm"> <option value="">${placeholder}</option> ${optionsHtml} </select>`; 
+            inputHtml = ` <select name="${safeHeader}" class="w-full bg-gray-50 dark:bg-black border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white rounded p-2 text-sm focus:border-green-500 shadow-sm"> <option value="">${placeholder}</option> ${optionsHtml} </select>`; 
         } else if (cleanH.includes("vol") && cleanH.includes("paired")) {
             currentActiveVols = res.activeVolunteers || [];
             currentVolPairedValue = val.toString().split(/[,|\n]+/).map(s=>s.trim()).filter(s=>s);
@@ -513,11 +529,11 @@ if(res.success) {
             <div class="w-full bg-gray-50 dark:bg-black border ${isReadOnly ? 'border-gray-200 dark:border-zinc-800 text-gray-500' : 'border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus-within:border-green-500'} rounded p-2 text-sm shadow-sm">
                 <div id="volPairedTags" class="flex flex-wrap gap-1 ${currentVolPairedValue.length > 0 ? 'mb-1' : ''}">
                     ${currentVolPairedValue.map(v => {
-                        const jsSafeVol = v.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                        return `<span class="bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-900/50 dark:text-teal-300 dark:border-teal-700/50 px-2 py-0.5 rounded text-xs flex items-center gap-1">${v} <i class="fa-solid fa-xmark cursor-pointer hover:text-red-500 ml-1" onclick="removeVolPaired('${jsSafeVol}')"></i></span>`;
+                        const jsSafeVol = window.escapeJsAttr(v);
+                        return `<span class="bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-900/50 dark:text-teal-300 dark:border-teal-700/50 px-2 py-0.5 rounded text-xs flex items-center gap-1">${window.escapeHtml(v)} <i class="fa-solid fa-xmark cursor-pointer hover:text-red-500 ml-1" onclick="removeVolPaired('${jsSafeVol}')"></i></span>`;
                     }).join('')}
                 </div>
-                <input type="hidden" name="${header}" id="volPairedHidden" value="${currentVolPairedValue.join(', ').replace(/"/g, '&quot;')}">
+                <input type="hidden" name="${safeHeader}" id="volPairedHidden" value="${window.escapeHtml(currentVolPairedValue.join(', '))}">
                 <div class="relative">
                     <input type="text" id="volPairedInput" ${isReadOnly ? 'readonly' : ''} class="w-full bg-transparent outline-none placeholder-gray-400 dark:placeholder-gray-500 text-sm" placeholder="Search volunteer..." autocomplete="off" oninput="filterActiveVols()" onfocus="filterActiveVols()">
                     <ul id="activeVolsList" class="absolute z-50 w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg mt-1 shadow-xl hidden max-h-40 overflow-y-auto pb-6"></ul>
@@ -525,20 +541,20 @@ if(res.success) {
             </div>
             `;
         } else if (cleanH.includes("remark")) { 
-            inputHtml = `<textarea name="${header}" rows="8" ${isReadOnly ? 'readonly' : ''} class="w-full bg-gray-50 dark:bg-black border ${isReadOnly ? 'border-gray-200 dark:border-zinc-800 text-gray-500' : 'border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:border-green-500'} rounded p-2 text-sm resize-y [color-scheme:light] dark:[color-scheme:dark] shadow-sm">${val}</textarea>`; 
+            inputHtml = `<textarea name="${safeHeader}" rows="8" ${isReadOnly ? 'readonly' : ''} class="w-full bg-gray-50 dark:bg-black border ${isReadOnly ? 'border-gray-200 dark:border-zinc-800 text-gray-500' : 'border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:border-green-500'} rounded p-2 text-sm resize-y [color-scheme:light] dark:[color-scheme:dark] shadow-sm">${safeVal}</textarea>`; 
         } else { 
             let type = "text"; 
             if(cleanH.includes("date")) type = "date"; 
             if(cleanH.includes("time")) type = "time"; 
-            inputHtml = `<input name="${header}" type="${type}" value="${val.replace(/"/g, '&quot;')}" ${isReadOnly ? 'readonly' : ''} class="w-full bg-gray-50 dark:bg-black border ${isReadOnly ? 'border-gray-200 dark:border-zinc-800 text-gray-500' : 'border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:border-green-500'} rounded p-2 text-sm [color-scheme:light] dark:[color-scheme:dark] shadow-sm">`; 
+            inputHtml = `<input name="${safeHeader}" type="${type}" value="${safeVal}" ${isReadOnly ? 'readonly' : ''} class="w-full bg-gray-50 dark:bg-black border ${isReadOnly ? 'border-gray-200 dark:border-zinc-800 text-gray-500' : 'border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:border-green-500'} rounded p-2 text-sm [color-scheme:light] dark:[color-scheme:dark] shadow-sm">`; 
         } 
-        fieldsDiv.innerHTML += `<div class="${wrapperClass}"><label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">${header}</label>${inputHtml}</div>`; 
+        fieldsDiv.innerHTML += `<div class="${wrapperClass}"><label class="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">${safeHeader}</label>${inputHtml}</div>`; 
     }); 
     
     const attSelect = document.querySelector('select[name*="Attending"], select[name*="attending"]'); 
     if(attSelect) toggleDependentFields(attSelect); 
 } else { 
-    fieldsDiv.innerHTML = '<div class="text-red-500 dark:text-red-400 font-bold">Error: ' + res.message + '</div>'; 
+    fieldsDiv.innerHTML = '<div class="text-red-500 dark:text-red-400 font-bold">Error: ' + window.escapeHtml(res.message) + '</div>'; 
 } 
 }); 
 }
@@ -565,11 +581,14 @@ for (let k in dataObj) {
 } 
 }
 
-// Compute Delta payload to prevent redundant writes
+// Compute Delta payload accurately using fuzzy key matching against normalized originalVolData
 let deltaObj = {};
 let isChanged = false;
+const isNewSubmission = document.getElementById("formTitle").innerText.includes("Add New");
 for (let key in dataObj) {
-if (dataObj[key] !== originalVolData[key]) {
+const prevVal = isNewSubmission ? "" : String(getValueFuzzy(originalVolData, key) ?? "").trim();
+const currVal = String(dataObj[key] ?? "").trim();
+if (currVal !== prevVal) {
     deltaObj[key] = dataObj[key];
     isChanged = true;
 }
@@ -594,24 +613,122 @@ showOverlay("success", "Attendance submitted securely.");
 const url = document.getElementById("volSheetSelector").value;
 const isNewAddition = document.getElementById("formTitle").innerText.includes("Add New");
 
+// Optimistically update the local cache so re-selecting is instant and shows the new state
+const cacheKey = `${selectedVolType}_${target || 'NEW'}`;
+if (personDataCache[cacheKey]) {
+    personDataCache[cacheKey] = personDataCache[cacheKey].then(oldRes => {
+        if (oldRes && oldRes.success) {
+            let newRes = JSON.parse(JSON.stringify(oldRes));
+            for (let k in deltaObj) {
+                newRes.data[k] = deltaObj[k];
+            }
+            return newRes;
+        }
+        return oldRes;
+    });
+}
+
+const payloadType = selectedVolType;
+
+// Optimistically inject the new name into local arrays so it's instantly searchable
+if (isNewAddition && target) {
+    if (preloadedNames[payloadType] && !preloadedNames[payloadType].includes(target)) {
+        preloadedNames[payloadType].push(target);
+        preloadedNames[payloadType].sort();
+    }
+    if (currentVolTypeRequest === payloadType && allNames && !allNames.includes(target)) {
+        allNames.push(target);
+        allNames.sort();
+    }
+}
+
 if (selectedVolType === "volunteer" && isNewAddition) {
     resetVolForm();
     document.getElementById("volNameSearch").value = "";
+} else {
+    // If we're updating an existing person, we could also hide the form
+    document.getElementById('volFormContainer').classList.add('hidden');
+    document.getElementById("volNameSearch").value = "";
+    toggleClearBtn('volNameSearch');
 }
 
 setTimeout(() => { closeOverlay(); }, 1200);
 
-const payload = { sheetUrl: url, type: selectedVolType, data: deltaObj, targetName: target }; 
+const payload = { sheetUrl: url, type: payloadType, data: deltaObj, targetName: target }; 
+
+// Instant WebSocket broadcast so Tracker, Pairing, Grouping, and other Volunteer tabs update immediately
+if (typeof window.collabSend === 'function') {
+    window.collabSend({
+        type: 'live:personAttendance',
+        sheetUrl: url,
+        personType: payloadType,
+        targetName: target,
+        data: deltaObj
+    });
+}
 
 // Background sync (Fire and forget)
 apiCall("submitAttendanceData", payload).then(res => { 
 if(res.success) {
-    if(selectedVolType === "volunteer") { 
-        apiCall("getNamesList", { url: url, type: "volunteer" }).then(r => { if(r.success) allNames = r.names; }); 
-    } 
+    // Refresh the definitive list from the backend in the background
+    apiCall("getNamesList", { url: url, type: payloadType }).then(r => { 
+        if(r.success) {
+            preloadedNames[payloadType] = r.names;
+            if (currentVolTypeRequest === payloadType) {
+                allNames = r.names;
+            }
+        } 
+    }); 
 } else {
     console.error("Background sync failed:", res.message);
     setTimeout(() => showOverlay("error", "Sync Error: " + res.message), 500);
 }
 }).catch(e => console.error("Sync Error", e));
 }
+
+// ==========================================
+// REAL-TIME COLLABORATIVE WEBSOCKET LISTENERS
+// ==========================================
+(function initVolunteerRealtimeListeners() {
+if (typeof window.collabOn !== 'function') return;
+
+window.collabOn('delta:personAttendance', (msg) => {
+const currentUrl = document.getElementById('volSheetSelector')?.value;
+if (!currentUrl || msg.sheetUrl !== currentUrl) return;
+
+const pType = String(msg.personType || msg.role || '').toLowerCase();
+const tName = msg.targetName;
+if (!tName) return;
+
+// Add newly added volunteer/trainee name to live search lists immediately
+if (preloadedNames[pType] && !preloadedNames[pType].includes(tName)) {
+preloadedNames[pType].push(tName);
+preloadedNames[pType].sort();
+if (currentVolTypeRequest === pType && Array.isArray(allNames) && !allNames.includes(tName)) {
+allNames.push(tName);
+allNames.sort();
+}
+}
+
+// Invalidate or patch local personDataCache for that person so next lookup is fresh
+const cacheKey = `${pType}_${tName}`;
+delete personDataCache[cacheKey];
+delete personDataCache[`${pType}_NEW`];
+});
+
+window.collabOn('delta:pairing', (msg) => {
+const currentUrl = document.getElementById('volSheetSelector')?.value;
+if (!currentUrl || msg.sheetUrl !== currentUrl) return;
+if (Array.isArray(msg.updates)) {
+msg.updates.forEach(u => {
+delete personDataCache[`trainee_${u.traineeName}`];
+});
+}
+});
+
+window.collabOn('state:pairingData', (msg) => {
+const currentUrl = document.getElementById('volSheetSelector')?.value;
+if (!currentUrl || msg.sheetUrl !== currentUrl) return;
+personDataCache = {};
+});
+})();

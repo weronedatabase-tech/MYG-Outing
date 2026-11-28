@@ -9,6 +9,7 @@
 <title>Comm Dashboard | MINDS MYG</title>
 <base target="_top">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/icon-192.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
@@ -23,6 +24,7 @@ theme: { extend: { colors: { primary: '#3b82f6' } } }
 <script src="backend/config.js"></script>
 <script src="frontend/js/state.js"></script>
 <script src="frontend/js/api.js"></script>
+<script src="frontend/js/live-sync.js"></script>
 <script src="frontend/js/ui.js"></script>
 <script src="frontend/js/auth.js"></script>
 <script src="frontend/js/comm.js"></script>
@@ -43,14 +45,14 @@ theme: { extend: { colors: { primary: '#3b82f6' } } }
 </button>
 <h1 class="text-base md:text-lg font-extrabold text-gray-900 dark:text-white leading-tight truncate">Comm Dashboard</h1>
 </div>
-<div class="flex items-center gap-1.5 shrink-0 pl-2 ml-auto border-l border-gray-200 dark:border-zinc-700">
-<button onclick="refreshApp()" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors group flex items-center p-1">
+<div class="flex items-center gap-1 md:gap-1.5 shrink-0 pl-1.5 md:pl-2 ml-auto border-l border-gray-200 dark:border-zinc-700">
+<button onclick="refreshApp()" aria-label="Refresh" title="Force Refresh Data & App" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors group flex items-center p-1">
 <i id="refreshIcon" class="fa-solid fa-arrows-rotate text-sm md:text-base group-hover:text-primary transition-transform"></i>
 </button>
-<button onclick="toggleTheme()" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors flex items-center p-1">
+<button onclick="toggleTheme()" aria-label="Toggle Theme" title="Toggle Theme" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors flex items-center p-1">
 <span class="text-sm md:text-base leading-none">🌗</span>
 </button>
-<button onclick="navigateTo('./')" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors flex items-center p-1">
+<button onclick="navigateTo('./')" aria-label="Home" title="Home" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors flex items-center p-1">
 <i class="fa-solid fa-house text-sm md:text-base"></i>
 </button>
 </div>
@@ -74,7 +76,7 @@ theme: { extend: { colors: { primary: '#3b82f6' } } }
 <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl p-6 shadow-xl">
 <h3 class="font-bold text-gray-900 dark:text-white mb-2 text-lg"><i class="fa-solid fa-list-check text-teal-500 mr-2"></i>Event Management</h3>
 <div class="relative mb-3">
-<label class="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold mb-1 block flex items-center gap-1">Select Event <span id="commSheetLoading" class="hidden"><i class="fa-solid fa-circle-notch fa-spin text-teal-500"></i></span></label>
+<label class="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold mb-1 block flex items-center gap-1">Select Event <span id="commSheetSpinner" class="hidden"><i class="fa-solid fa-circle-notch fa-spin text-teal-500"></i></span></label>
 <select id="commSheetSelector" class="w-full bg-gray-50 dark:bg-black border border-gray-300 dark:border-zinc-700 rounded-lg py-2 px-3 text-sm focus:border-teal-500 outline-none text-gray-900 dark:text-white"><option disabled selected>Loading...</option></select>
 </div>
 <div class="grid grid-cols-2 gap-2 md:gap-3 mt-3 w-full">

@@ -45,6 +45,100 @@ function getTemplateFileId() {
 
 // --- ACTIVE CONSTANTS ---
 const PROP_SETTINGS = "VOL_APP_SETTINGS";
+const ADMIN_ONLY_ACTIONS = {
+  createOuting: true,
+  updateOuting: true,
+  saveAppSettings: true,
+  changeAdminPassword: true,
+  runAutoPairing: true,
+  runAutoGrouping: true,
+  fetchManualPairingData: true,
+  syncManualPairingUpdates: true,
+  syncManualGroupingUpdates: true,
+  getOutingDetails: true,
+  uploadExportTable: true,
+  getTemplateHeaders: true
+};
+
+// --- LIGHTWEIGHT 0-SHEET-READ SYNC STATE & AUTH ---
+function isAdminKeyValid(adminKey) {
+  if (!adminKey) return false;
+  const stored = PropertiesService.getScriptProperties().getProperty("Admin");
+  return Boolean(stored && String(adminKey) === String(stored));
+}
+
+function getSyncStateCacheKey() {
+  return "SYNC_STATE_" + ENV;
+}
+
+function readSyncStateObj() {
+  try {
+    const raw = CacheService.getScriptCache().get(getSyncStateCacheKey());
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") return parsed;
+    }
+  } catch (e) {}
+  return { seq: 0, global: 0, domains: {}, events: [] };
+}
+
+function recordSyncEvent(action, domains, sheetUrl, clientId) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const state = readSyncStateObj();
+    const now = Date.now();
+    const domainList = Array.isArray(domains) ? domains : [domains || "all"];
+    state.seq = (Number(state.seq) || 0) + 1;
+    state.global = now;
+    if (!state.domains || typeof state.domains !== "object") state.domains = {};
+    domainList.forEach(d => {
+      if (d) state.domains[d] = state.seq;
+    });
+    if (!Array.isArray(state.events)) state.events = [];
+    state.events.push({
+      seq: state.seq,
+      action: action || "",
+      domain: domainList[0] || "all",
+      domains: domainList,
+      sheetUrl: sheetUrl || null,
+      clientId: clientId || null,
+      ts: now
+    });
+    if (state.events.length > 40) {
+      state.events = state.events.slice(-40);
+    }
+    cache.put(getSyncStateCacheKey(), JSON.stringify(state), 21600);
+    return state.seq;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function getSyncState(payload, adminKey) {
+  const sinceSeq = payload && payload.sinceSeq ? Number(payload.sinceSeq) || 0 : 0;
+  const state = readSyncStateObj();
+  const isAdmin = isAdminKeyValid(adminKey);
+  const currentSeq = Number(state.seq) || 0;
+  const events = Array.isArray(state.events)
+    ? state.events.filter(ev => ev && Number(ev.seq) > sinceSeq && (isAdmin || ev.domain !== "admin"))
+    : [];
+  const domains = {};
+  if (state.domains && typeof state.domains === "object") {
+    for (const k in state.domains) {
+      if (isAdmin || k !== "admin") domains[k] = state.domains[k];
+    }
+  }
+  return {
+    success: true,
+    status: "success",
+    seq: currentSeq,
+    changed: currentSeq > sinceSeq,
+    global: state.global || Date.now(),
+    domains: domains,
+    events: events,
+    authInfo: { isAdmin: isAdmin }
+  };
+}
 
 // --- API ROUTER ---
 function doGet(e) {
@@ -73,10 +167,24 @@ return response({ success: false, message: "Invalid JSON" });
 
 const action = request.action;
 const payload = request.data;
+const clientId = request.clientId || null;
+const adminKey = request.adminKey || (payload && typeof payload === 'object' ? payload.adminKey : '') || '';
 let result;
+
+if (ADMIN_ONLY_ACTIONS[action]) {
+  const pwdToCheck = action === 'changeAdminPassword' && payload && payload.currentPassword
+    ? payload.currentPassword
+    : adminKey;
+  if (!isAdminKeyValid(pwdToCheck)) {
+    return response({ success: false, authError: true, message: "Admin authentication required." });
+  }
+}
 
 try {
 switch (action) {
+case 'getSyncState':
+result = getSyncState(payload, adminKey);
+break;
 case 'verifyAdminPassword':
 result = verifyAdminPassword(payload);
 break;
@@ -88,18 +196,23 @@ result = getRecentOutingSheets();
 break;
 case 'forceBackendRefresh':
 result = forceBackendRefresh(payload);
+if (result && result.success) recordSyncEvent(action, ['outings', 'attendance', 'pairing', 'grouping'], payload && payload.sheetUrl, clientId);
 break;
 case 'createOuting':
 result = createOuting(payload);
+if (result && result.success) recordSyncEvent(action, ['outings'], result.sheetUrl || null, clientId);
 break;
 case 'updateOuting':
 result = updateOuting(payload);
+if (result && result.success) recordSyncEvent(action, ['outings', 'attendance', 'pairing'], payload && payload.sheetUrl, clientId);
 break;
 case 'runAutoPairing':
 result = runAutoPairing(payload);
+if (result && result.success) recordSyncEvent(action, ['pairing', 'attendance', 'grouping'], typeof payload === 'string' ? payload : (payload && payload.sheetUrl), clientId);
 break;
 case 'runAutoGrouping':
 result = runAutoGrouping(payload);
+if (result && result.success) recordSyncEvent(action, ['grouping', 'pairing', 'attendance'], typeof payload === 'string' ? payload : (payload && payload.sheetUrl), clientId);
 break;
 case 'getNamesList':
 result = getNamesList(payload.url, payload.type);
@@ -109,6 +222,7 @@ result = getPersonData(payload.url, payload.type, payload.name);
 break;
 case 'submitAttendanceData':
 result = submitAttendanceData(payload);
+if (result && result.success) recordSyncEvent(action, ['attendance', 'pairing', 'grouping', 'admin'], payload && payload.sheetUrl, clientId);
 break;
 case 'getTemplateHeaders':
 result = getTemplateHeaders();
@@ -118,6 +232,7 @@ result = getAppSettings();
 break;
 case 'saveAppSettings':
 result = saveAppSettings(payload);
+if (result && result.success) recordSyncEvent(action, ['settings'], null, clientId);
 break;
 case 'getOutingDetails':
 result = getOutingDetails(payload);
@@ -127,21 +242,26 @@ result = fetchCommAttendance(payload.sheetUrl);
 break;
 case 'addCommJuncture':
 result = addCommJuncture(payload.sheetUrl, payload.junctureName);
+if (result && result.success) recordSyncEvent(action, ['attendance'], payload && payload.sheetUrl, clientId);
 break;
 case 'deleteCommJuncture':
 result = deleteCommJuncture(payload.sheetUrl, payload.junctureName);
+if (result && result.success) recordSyncEvent(action, ['attendance'], payload && payload.sheetUrl, clientId);
 break;
 case 'syncCommAttendance':
 result = syncCommAttendance(payload.sheetUrl, payload.multipleUpdates);
+if (result && result.success) recordSyncEvent(action, ['attendance', 'pairing', 'grouping'], payload && payload.sheetUrl, clientId);
 break;
 case 'fetchManualPairingData':
 result = fetchManualPairingData(payload.sheetUrl);
 break;
 case 'syncManualPairingUpdates':
 result = syncManualPairingUpdates(payload.sheetUrl, payload.updates);
+if (result && result.success) recordSyncEvent(action, ['pairing', 'attendance', 'grouping'], payload && payload.sheetUrl, clientId);
 break;
 case 'syncManualGroupingUpdates':
 result = syncManualGroupingUpdates(payload.sheetUrl, payload.updates);
+if (result && result.success) recordSyncEvent(action, ['grouping', 'pairing', 'attendance'], payload && payload.sheetUrl, clientId);
 break;
 case 'uploadExportTable':
 result = uploadExportTable(payload);
@@ -716,11 +836,10 @@ if (cached) { try { return JSON.parse(cached); } catch(e) {} }
 }
 
 const ss = ssOpt || SpreadsheetApp.openByUrl(sheetUrl);
-const tSheet = ss.getSheetByName("Traine Attendance");
+const tSheet = ss.getSheetByName("Trainee Attendance");
 const vSheet = ss.getSheetByName("Volunteer Attendance");
 const infoSheet = ss.getSheetByName("OutingInformation");
 let tSheetFinal = tSheet || ss.getSheetByName("Trainee Attendance ");
-if (!tSheetFinal) tSheetFinal = ss.getSheetByName("Trainee Attendance");
 
 if(!tSheetFinal || !vSheet) return { success: false, message: "Missing Tabs: 'Trainee Attendance' or 'Volunteer Attendance'" };
 
@@ -1606,25 +1725,34 @@ juncIdx = newColIdx - 1;
 }
 
 const juncRange = sheet.getRange(2, juncIdx + 1, lastRow - 1);
-const juncData = getSafeValues(juncRange);
+const juncData = isBus ? getSafeValues(juncRange) : juncRange.getValues();
 
 const updateMap = {};
-updates.forEach(u => updateMap[u.name.toLowerCase()] = u.status);
+updates.forEach(u => {
+  if (!u || !u.name) return;
+  const key = String(u.name).trim().toLowerCase();
+  updateMap[key] = isBus
+    ? (u.status != null ? String(u.status).trim() : "")
+    : (u.status === true || String(u.status).toLowerCase() === 'true');
+});
 
 let changed = false;
 for (let i = 0; i < namesData.length; i++) {
-const name = String(namesData[i][0]).trim().toLowerCase();
-if (name && updateMap.hasOwnProperty(name)) {
-  if (juncData[i][0] !== updateMap[name]) {
+  const name = String(namesData[i][0]).trim().toLowerCase();
+  if (name && updateMap.hasOwnProperty(name)) {
+    const currentCell = isBus
+      ? (juncData[i][0] != null ? String(juncData[i][0]).trim() : "")
+      : (juncData[i][0] === true || String(juncData[i][0]).toLowerCase() === 'true');
+    if (currentCell !== updateMap[name] || (!isBus && typeof juncData[i][0] !== 'boolean')) {
       juncData[i][0] = updateMap[name];
       changed = true;
+    }
   }
-}
 }
 
 if (changed) {
-juncRange.setValues(juncData);
-changedGlobal = true;
+  juncRange.setValues(juncData);
+  changedGlobal = true;
 }
 }
 
@@ -1652,18 +1780,27 @@ const lastRow = sheet.getLastRow();
 const lastCol = sheet.getLastColumn();
 if (lastRow < 1) return { success: false, message: "Sheet is empty." };
 
+const rawName = String(junctureName || '').trim();
+const isBus = rawName.startsWith('__BUS__');
+const cleanName = isBus ? rawName.substring(7).trim() : rawName;
+if (!cleanName) return { success: false, message: "Invalid juncture name." };
+
 const headers = getSafeValues(sheet.getRange(1, 1, 1, lastCol))[0];
-const targetHeader = `[Att] ${junctureName.trim()}`;
+const targetHeader = isBus ? `[Bus] ${cleanName}` : `[Att] ${cleanName}`;
 
 if (headers.includes(targetHeader)) {
-return { success: false, message: "Juncture already exists." };
+return { success: false, message: isBus ? "Bus location already exists." : "Juncture already exists." };
 }
 
 const newColIdx = lastCol + 1;
 sheet.insertColumnAfter(lastCol);
 sheet.getRange(1, newColIdx).setValue(targetHeader);
 if (lastRow > 1) {
-sheet.getRange(2, newColIdx, lastRow - 1).insertCheckboxes();
+  if (isBus) {
+    sheet.getRange(2, newColIdx, lastRow - 1).clearDataValidations();
+  } else {
+    sheet.getRange(2, newColIdx, lastRow - 1).insertCheckboxes();
+  }
 }
 // SpreadsheetApp.flush(); // Optimized out
 atomicCacheRebuild(sheetUrl, ss);
@@ -1680,7 +1817,11 @@ function deleteCommJuncture(sheetUrl, junctureName) {
 const lock = LockService.getScriptLock();
 try {
 lock.waitLock(28000);
-if (junctureName === "Meeting") {
+const rawName = String(junctureName || '').trim();
+const isBus = rawName.startsWith('__BUS__');
+const cleanName = isBus ? rawName.substring(7).trim() : rawName;
+
+if (!isBus && cleanName === "Meeting") {
 return { success: false, message: "The default 'Meeting' juncture cannot be deleted." };
 }
 const ss = SpreadsheetApp.openByUrl(sheetUrl);
@@ -1692,7 +1833,7 @@ const lastCol = sheet.getLastColumn();
 if (lastRow < 1) return { success: false, message: "Sheet is empty." };
 
 const headers = getSafeValues(sheet.getRange(1, 1, 1, lastCol))[0];
-const targetHeader = `[Att] ${junctureName.trim()}`;
+const targetHeader = isBus ? `[Bus] ${cleanName}` : `[Att] ${cleanName}`;
 const juncIdx = headers.indexOf(targetHeader);
 
 if (juncIdx > -1) {
@@ -1702,7 +1843,7 @@ atomicCacheRebuild(sheetUrl, ss);
 return fetchCommAttendance(sheetUrl, true, true, ss);
 }
 
-return { success: false, message: "Juncture not found." };
+return { success: false, message: isBus ? "Bus juncture column not found." : "Juncture not found." };
 } catch(e) {
 return { success: false, message: e.toString() };
 } finally {
@@ -2005,6 +2146,13 @@ if (normKey.includes("group")) groupVal = String(v).trim();
 if (normKey.includes("volpaired")) pairedVol = String(v).trim();
 }
 
+function removeLargeCacheKey(cache, baseKey) {
+  if (!cache || !baseKey) return;
+  const keys = [baseKey, baseKey + "_count"];
+  for (let i = 0; i < 15; i++) keys.push(baseKey + "_" + i);
+  try { cache.removeAll(keys); } catch (e) {}
+}
+
 // 1. Patch PAIR Cache
 try {
 const pairKey = getCacheKey("pair", sheetUrl);
@@ -2012,34 +2160,35 @@ const pairStr = getLargeCache(pairKey);
 if (pairStr) {
 const pairData = JSON.parse(pairStr);
 if (pairData.success && pairData.data) {
- const arr = role === 'TRAINEE' ? pairData.data.trainees : pairData.data.volunteers;
- let person = arr.find(p => p.name.toLowerCase() === normName);
- 
- if (!person) {
-     person = { name: name, role: role, extra: {} };
-     arr.push(person);
- }
- 
- if (attVal !== undefined) {
-     person.attending = attVal;
-     if (role === 'TRAINEE') {
-         person.isAttendingN = (attVal === 'n');
-         person.isAttendingUnknown = (attVal === '');
+ if (role === 'VOLUNTEER' && (attVal === 'n' || attVal === '')) {
+     pairData.data.volunteers = (pairData.data.volunteers || []).filter(p => p.name.toLowerCase() !== normName);
+     if (attVal === 'n') {
+         pairData.data.trainees.forEach(t => {
+             if (t.volPaired && t.volPaired.toLowerCase().includes(normName)) {
+                 const vols = t.volPaired.split(/[,|\n]+/).map(v => v.trim()).filter(v => v);
+                 t.volPaired = vols.filter(v => v.toLowerCase() !== normName).join(', ');
+             }
+         });
      }
- }
- if (groupVal !== undefined && role === 'TRAINEE') person.group = groupVal;
- if (pairedVol !== undefined && role === 'TRAINEE') person.volPaired = pairedVol;
- 
- // Apply Volunteer Cascade Unpairing immediately in cache
- if (role === 'VOLUNTEER' && attVal === 'n') {
-     pairData.data.trainees.forEach(t => {
-         if (t.volPaired && t.volPaired.toLowerCase().includes(normName)) {
-             const vols = t.volPaired.split(/[,|\n]+/).map(v => v.trim()).filter(v => v);
-             t.volPaired = vols.filter(v => v.toLowerCase() !== normName).join(', ');
+ } else {
+     const arr = role === 'TRAINEE' ? pairData.data.trainees : pairData.data.volunteers;
+     let person = arr.find(p => p.name.toLowerCase() === normName);
+     if (!person) {
+         person = { name: name, role: role, extra: {} };
+         arr.push(person);
+     }
+     if (attVal !== undefined) {
+         person.attending = attVal;
+         if (role === 'TRAINEE') {
+             person.isAttendingN = (attVal === 'n');
+             person.isAttendingUnknown = (attVal === '');
          }
-     });
- } else if (role === 'TRAINEE' && attVal === 'n') {
-     person.volPaired = "";
+     }
+     if (groupVal !== undefined && role === 'TRAINEE') person.group = groupVal;
+     if (pairedVol !== undefined && role === 'TRAINEE') person.volPaired = pairedVol;
+     if (role === 'TRAINEE' && attVal === 'n') {
+         person.volPaired = "";
+     }
  }
  putLargeCache(pairKey, JSON.stringify(pairData));
 }
@@ -2108,23 +2257,20 @@ if (namesData.success && namesData.names) {
 }
 } catch(e) {}
 
-// 4. Invalidate STATS Cache lazily
+// 4. Invalidate STATS Cache cleanly (including chunks)
 try {
-const statsKey = getCacheKey("stats", sheetUrl);
-cache.remove(statsKey);
-cache.remove(statsKey + "_count");
+removeLargeCacheKey(cache, getCacheKey("stats", sheetUrl));
 } catch(e) {}
 
-// 5. Invalidate Person Data Caches
+// 5. Invalidate Person Data & Metadata Caches (always clear trainee meta so activeVolunteers stays fresh)
 try {
 if (normName) {
-  const pRecKey = getCacheKey("p_rec_" + type.toLowerCase() + "_" + normName, sheetUrl);
-  cache.remove(pRecKey);
-  cache.remove(pRecKey + "_count");
+  removeLargeCacheKey(cache, getCacheKey("p_rec_" + type.toLowerCase() + "_" + normName, sheetUrl));
 }
-const pMetaKey = getCacheKey("p_meta_" + type.toLowerCase(), sheetUrl);
-cache.remove(pMetaKey);
-cache.remove(pMetaKey + "_count");
+removeLargeCacheKey(cache, getCacheKey("p_meta_" + type.toLowerCase(), sheetUrl));
+if (role === 'VOLUNTEER') {
+  removeLargeCacheKey(cache, getCacheKey("p_meta_trainee", sheetUrl));
+}
 } catch(e) {}
 }
 
@@ -2407,10 +2553,12 @@ if (str.startsWith("[Att] ") || str === "[Sys] Gone Home") {
 targetRow = insertRow;
 }
 } else {
-// Existing Row Logic - BATCHED UPDATE
+// Existing Row Logic - FORMULA-PRESERVING BATCHED UPDATE
 targetRow = cell.getRow();
 const rowRange = sheet.getRange(targetRow, 1, 1, rawHeaders.length);
-const rowData = getSafeValues(rowRange)[0];
+const rowRawValues = rowRange.getValues()[0];
+const rowDisplayData = getSafeValues(rowRange)[0];
+const rowFormulas = rowRange.getFormulas()[0];
 let hasChanges = false;
 
 for (const [cleanKey, value] of Object.entries(form.data)) {
@@ -2428,10 +2576,13 @@ if (normHeader.includes("project")) {
 break; // Project is locked after initial assignment typically unless handled otherwise
 }
 
-if (normHeader.includes("attending")) attendingStatus = value.toString().toLowerCase();
+if (normHeader.includes("attending")) attendingStatus = String(value != null ? value : '').toLowerCase();
 
-if (rowData[i] !== value) {
-rowData[i] = value;
+const nextStr = value != null ? String(value) : "";
+if (rowDisplayData[i] !== nextStr) {
+rowRawValues[i] = value;
+rowDisplayData[i] = nextStr;
+rowFormulas[i] = "";
 hasChanges = true;
 }
 break;
@@ -2440,7 +2591,8 @@ break;
 }
 
 if (hasChanges) {
-rowRange.setValues([rowData]);
+const finalRow = rowRawValues.map((v, idx) => rowFormulas[idx] !== "" ? rowFormulas[idx] : v);
+rowRange.setValues([finalRow]);
 }
 }
 

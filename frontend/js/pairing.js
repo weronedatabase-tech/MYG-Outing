@@ -1,14 +1,57 @@
 let currentManualPairingSheetUrl = null;
 let manualPairingData = { trainees: [], volunteers: [], priVolMap: new Map() };
 let pendingPairingUpdates = [];
+let inFlightPairingUpdates = [];
 let isManualPairingSyncing = false;
 let manualPairingSyncTimeout = null;
 let manualPairingPollInterval = null;
 let lastPairingLocalChange = 0;
+const pairingCardTimers = new Map();
 
 let isFilteredManualPairingMode = false;
 let filteredManualPairingSourceView = null;
 let showOnlyUnpairedVols = false;
+
+function hasLocalOrInFlightPairingUpdates() {
+return pendingPairingUpdates.length > 0 || inFlightPairingUpdates.length > 0;
+}
+
+function isPairingOpPendingOrInFlight(traineeName, volName) {
+const tNorm = String(traineeName || '').toLowerCase().trim();
+const vNorm = String(volName || '').toLowerCase().trim();
+const check = (list) => list.some(p => {
+if (String(p.traineeName || '').toLowerCase().trim() !== tNorm) return false;
+if (!p.op || !vNorm) return true;
+return String(p.volName || '').toLowerCase().trim() === vNorm;
+});
+return check(pendingPairingUpdates) || check(inFlightPairingUpdates);
+}
+
+function queuePairingOp(traineeName, op, volName, volPaired) {
+const idx = pendingPairingUpdates.findIndex(u =>
+u.traineeName === traineeName &&
+u.op &&
+String(u.volName || '').toLowerCase() === String(volName || '').toLowerCase()
+);
+const entry = { traineeName, op, volName, volPaired };
+if (idx > -1) {
+pendingPairingUpdates[idx] = entry;
+} else {
+pendingPairingUpdates.push(entry);
+}
+}
+
+function applyPairingDeltaToList(currentStr, op, volName) {
+const vols = currentStr ? currentStr.split(/[,|\n]+/).map(v => v.trim()).filter(v => v) : [];
+const vNorm = String(volName || '').toLowerCase().trim();
+if (!vNorm) return vols.join(', ');
+if (op === 'add') {
+if (!vols.some(v => v.toLowerCase() === vNorm)) vols.push(volName.trim());
+} else if (op === 'remove') {
+return vols.filter(v => v.toLowerCase() !== vNorm).join(', ');
+}
+return vols.join(', ');
+}
 
 // ==========================================
 // MANUAL PAIRING LOGIC
@@ -44,6 +87,10 @@ loadManualPairingData();
 function loadManualPairingData() {
 const overlay = document.getElementById('manualPairingLoadingOverlay');
 if(overlay) overlay.classList.remove('hidden');
+
+if (typeof window.collabSetContext === 'function') {
+window.collabSetContext('pairing', currentManualPairingSheetUrl);
+}
 
 apiCall('fetchManualPairingData', { sheetUrl: currentManualPairingSheetUrl }).then(res => {
 if(overlay) overlay.classList.add('hidden');
@@ -83,29 +130,31 @@ if (showOnlyUnpairedVols) {
 renderManualPairings();
 };
 
-function triggerManualPairingPulse(sourceName, targetName, isPaired) {
+function triggerManualPairingPulse(sourceName, targetName, isPaired, isRemote = false) {
 setTimeout(() => {
 requestAnimationFrame(() => {
-const querySource = sourceName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-const queryTarget = targetName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+const querySource = (sourceName || '').replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+const queryTarget = (targetName || '').replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-const sourceCard = document.querySelector(`.dnd-dropzone[data-name="${querySource}"]`);
-const targetCard = document.querySelector(`.dnd-dropzone[data-name="${queryTarget}"]`);
+const sourceCard = querySource ? document.querySelector(`.dnd-dropzone[data-name="${querySource}"]`) : null;
+const targetCard = queryTarget ? document.querySelector(`.dnd-dropzone[data-name="${queryTarget}"]`) : null;
 
 [sourceCard, targetCard].forEach(card => {
 if (card) {
-   const container = card.parentElement;
-   if (container) {
-       const containerRect = container.getBoundingClientRect();
-       const cardRect = card.getBoundingClientRect();
-       
-       if (cardRect.height > 0) {
-           const scrollTop = container.scrollTop + (cardRect.top - containerRect.top) - (containerRect.height / 2) + (cardRect.height / 2);
+   if (!isRemote) {
+       const container = card.parentElement;
+       if (container) {
+           const containerRect = container.getBoundingClientRect();
+           const cardRect = card.getBoundingClientRect();
            
-           container.scrollTo({
-               top: scrollTop,
-               behavior: 'smooth'
-           });
+           if (cardRect.height > 0) {
+               const scrollTop = container.scrollTop + (cardRect.top - containerRect.top) - (containerRect.height / 2) + (cardRect.height / 2);
+               
+               container.scrollTo({
+                   top: scrollTop,
+                   behavior: 'smooth'
+               });
+           }
        }
    }
    
@@ -118,20 +167,20 @@ if (card) {
 }
 });
 });
-}, 150);
+}, isRemote ? 50 : 150);
 }
 
 function generatePairingPillHtml(pillName, traineeName, volName, isTraineeGoneHome = false) {
 const goneHomeBadge = isTraineeGoneHome ? `<i class="fa-solid fa-house-user text-blue-500 ml-1" title="Gone Home"></i>` : '';
 
-const jsSafeTrainee = traineeName.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '&quot;');
-const jsSafeVol = volName.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '&quot;');
+const jsSafeTrainee = window.escapeJsAttr(traineeName);
+const jsSafeVol = window.escapeJsAttr(volName);
 
 const removeBtn = isTraineeGoneHome ? '' : `<div class="remove-x flex items-center justify-center font-bold text-[10px] bg-transparent text-red-500 shadow-none border-none hover:bg-transparent hover:text-red-700 hover:scale-125 top-0 right-1" onclick="unpairTrainee('${jsSafeTrainee}', '${jsSafeVol}')">✕</div>`;
 
 return `<div class="relative flex w-full align-top pointer-events-auto">
 <div class="bg-gray-100 dark:bg-zinc-800 border-gray-300 dark:border-zinc-600 text-gray-900 dark:text-gray-100 text-[10px] md:text-[11px] pl-2 ${isTraineeGoneHome ? 'pr-2' : 'pr-6'} py-1 rounded shadow-sm border font-bold opacity-90 leading-tight break-words whitespace-normal text-left w-full flex items-center">
-<span>${pillName}</span>${goneHomeBadge}
+<span>${window.escapeHtml(pillName)}</span>${goneHomeBadge}
 </div>
 ${removeBtn}
 </div>`;
@@ -156,11 +205,25 @@ isTraineeGoneHome = true;
 pairedPills += generatePairingPillHtml(pairedName, tName, vName, isTraineeGoneHome);
 });
 
-const htmlSafeName = item.name.replace(/"/g, '&quot;');
-const jsSafeName = item.name.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '&quot;');
+const htmlSafeName = window.escapeHtml(item.name);
+const jsSafeName = window.escapeJsAttr(item.name);
 
-const displayName = item.name;
+const displayName = htmlSafeName;
 const isGoneHome = item.isGoneHome === true;
+
+// Tier 3: Workload Balance Badge on Volunteer Cards
+let workloadBadge = '';
+if (isVol) {
+const count = pairedNames.length;
+const wlColor = count === 0
+    ? 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-zinc-800 dark:text-gray-400 dark:border-zinc-700'
+    : count === 1
+        ? 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700'
+        : count === 2
+            ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700'
+            : 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700';
+workloadBadge = `<span class="inline-flex shrink-0 items-center justify-center min-w-[18px] h-4 px-1 rounded-full text-[9px] font-black border ${wlColor}" title="Paired with ${count} trainee${count === 1 ? '' : 's'}">${count}</span>`;
+}
 
 let sysBadge = '';
 let opacityClass = '';
@@ -181,7 +244,7 @@ let starBadge = '';
 if (!isVol && item.extra && item.extra.t_one_on_one) {
 const oneOnOneRaw = String(item.extra.t_one_on_one).trim().toLowerCase();
 if (oneOnOneRaw !== '' && !['no', 'n', 'false', '0'].includes(oneOnOneRaw)) {
-starBadge = `<i class="fa-solid fa-star text-yellow-500 shrink-0 text-xs ml-1" title="1-1 Pairing Required: ${String(item.extra.t_one_on_one).replace(/"/g, '&quot;')}"></i>`;
+starBadge = `<i class="fa-solid fa-star text-yellow-500 shrink-0 text-xs ml-1" title="1-1 Pairing Required: ${window.escapeHtml(String(item.extra.t_one_on_one))}"></i>`;
 }
 }
 
@@ -192,17 +255,17 @@ remarkContent = String(item.extra.remark).trim();
 }
 
 if (remarkContent) {
-remarksBadge = `<i class="fa-solid fa-note-sticky text-yellow-500 dark:text-yellow-400 shrink-0 text-xs ml-1 cursor-help" title="${remarkContent.replace(/"/g, '&quot;')}"></i>`;
+remarksBadge = `<i class="fa-solid fa-note-sticky text-yellow-500 dark:text-yellow-400 shrink-0 text-xs ml-1 cursor-help" title="${window.escapeHtml(remarkContent)}"></i>`;
 }
 
 let projectInfo = '';
 if (item.project) {
-projectInfo = `<span class="text-[10px] text-gray-500 dark:text-gray-400 font-medium">${item.project}</span>`;
+projectInfo = `<span class="text-[10px] text-gray-500 dark:text-gray-400 font-medium">${window.escapeHtml(item.project)}</span>`;
 if (!isVol && item.group) {
-projectInfo += `<span class="ml-1.5 bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800 border px-1.5 py-0.5 rounded font-black text-[8px] uppercase shadow-sm whitespace-nowrap">Grp ${item.group}</span>`;
+projectInfo += `<span class="ml-1.5 bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800 border px-1.5 py-0.5 rounded font-black text-[8px] uppercase shadow-sm whitespace-nowrap">Grp ${window.escapeHtml(item.group)}</span>`;
 }
 } else if (!isVol && item.group) {
-projectInfo = `<span class="bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800 border px-1.5 py-0.5 rounded font-black text-[8px] uppercase shadow-sm whitespace-nowrap">Grp ${item.group}</span>`;
+projectInfo = `<span class="bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800 border px-1.5 py-0.5 rounded font-black text-[8px] uppercase shadow-sm whitespace-nowrap">Grp ${window.escapeHtml(item.group)}</span>`;
 }
 
 const addBtnHtml = isGoneHome ? '' : `<button class="shrink-0 text-xs text-gray-500 dark:text-gray-400 hover:text-primary transition-colors bg-gray-50 dark:bg-black hover:bg-gray-100 dark:hover:bg-zinc-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-zinc-700 shadow-sm pointer-events-auto flex items-center justify-center font-bold" onclick="event.stopPropagation(); openQuickPairModal('${jsSafeName}', '${item.role}')">+${isVol ? 'Trn' : 'Vol'}</button>`;
@@ -212,6 +275,7 @@ return `
 <div class="flex justify-between items-center w-full gap-2">
 <div class="main-name-pill font-extrabold text-[11px] md:text-[12px] text-gray-900 dark:text-white leading-tight break-words whitespace-normal flex items-center gap-1 min-w-0 flex-1">
 <span class="break-words">${displayName}</span>
+${workloadBadge}
 ${starBadge}
 ${remarksBadge}
 ${cgBadge}
@@ -293,7 +357,15 @@ pairedNames = item.volPaired ? item.volPaired.split(/[,|\n]+/).map(v => v.trim()
 
 const querySafeName = item.name.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 const cardSelector = `.dnd-dropzone[data-name="${querySafeName}"][data-role="${role}"]`;
-const existingCard = document.querySelector(cardSelector);
+const timerKey = `${role}::${item.name}`;
+const prevTimer = pairingCardTimers.get(timerKey);
+if (prevTimer) {
+clearTimeout(prevTimer);
+pairingCardTimers.delete(timerKey);
+}
+const matchedCards = Array.from(document.querySelectorAll(cardSelector));
+const existingCard = matchedCards[0] || null;
+for (let i = 1; i < matchedCards.length; i++) matchedCards[i].remove();
 
 // Check if it should be in the DOM based on current filters
 let shouldBeInDOM = true;
@@ -323,6 +395,7 @@ const newHtml = generatePairingCardHtml(item, pairedNames);
 
 if (existingCard) {
 if (!shouldBeInDOM) {
+    existingCard.dataset.collapsing = '1';
     existingCard.style.overflow = 'hidden';
     existingCard.style.minHeight = '0';
     existingCard.style.transition = 'opacity 0.2s ease, height 0.3s ease, margin 0.3s ease, padding 0.3s ease';
@@ -333,14 +406,17 @@ if (!shouldBeInDOM) {
     existingCard.style.margin = '0px';
     existingCard.style.padding = '0px';
     existingCard.style.border = 'none';
-    setTimeout(() => {
-        existingCard.remove();
+    const timerId = setTimeout(() => {
+        pairingCardTimers.delete(timerKey);
+        if (existingCard.dataset.collapsing !== '1') return;
+        if (existingCard.isConnected) existingCard.remove();
         const containerId = role === 'VOLUNTEER' ? 'dnd-source-pool' : 'dnd-target-list';
         const container = document.getElementById(containerId);
         if (container && container.querySelectorAll('.dnd-dropzone').length === 0) {
             container.innerHTML = `<p class="text-[10px] text-gray-500 font-bold p-2 text-center mt-2">No active ${role === 'VOLUNTEER' ? 'volunteers' : 'trainees'} matching search.</p>`;
         }
     }, 300);
+    pairingCardTimers.set(timerKey, timerId);
 } else {
     const temp = document.createElement('div');
     temp.innerHTML = newHtml;
@@ -350,6 +426,7 @@ if (!shouldBeInDOM) {
         const p = (manualPairingData[role === 'VOLUNTEER' ? 'volunteers' : 'trainees'] || []).find(x => x.name === item.name);
         if (p) showPersonInfo(p);
     });
+    if (typeof window.applyAllCollabRemoteFocus === 'function') window.applyAllCollabRemoteFocus();
 }
 } else {
 if (shouldBeInDOM) {
@@ -370,6 +447,7 @@ if (shouldBeInDOM) {
             const p = (manualPairingData[role === 'VOLUNTEER' ? 'volunteers' : 'trainees'] || []).find(x => x.name === item.name);
             if (p) showPersonInfo(p);
         });
+        if (typeof window.applyAllCollabRemoteFocus === 'function') window.applyAllCollabRemoteFocus();
         
         void newCardNode.offsetWidth;
         newCardNode.style.opacity = '1';
@@ -380,6 +458,9 @@ if (shouldBeInDOM) {
 }
 
 function renderManualPairings() {
+pairingCardTimers.forEach(timer => clearTimeout(timer));
+pairingCardTimers.clear();
+
 const sourcePool = document.getElementById('dnd-source-pool');
 const targetList = document.getElementById('dnd-target-list');
 
@@ -484,6 +565,9 @@ const p = (manualPairingData[arr] || []).find(x => x.name === name);
 if (p) showPersonInfo(p);
 });
 });
+if (typeof window.applyAllCollabRemoteFocus === 'function') {
+window.applyAllCollabRemoteFocus();
+}
 }
 
 function handleManualPairingDrop(sourceName, sourceRole, targetName) {
@@ -522,18 +606,21 @@ if (!exists) {
 currentVols.push(volName);
 trainee.volPaired = currentVols.join(', ');
 
-const updateIndex = pendingPairingUpdates.findIndex(u => u.traineeName === traineeName);
-if (updateIndex > -1) {
-pendingPairingUpdates[updateIndex].volPaired = trainee.volPaired;
-} else {
-pendingPairingUpdates.push({ traineeName: traineeName, volPaired: trainee.volPaired });
+queuePairingOp(traineeName, 'add', volName, trainee.volPaired);
+
+if (typeof window.collabSend === 'function') {
+window.collabSend({
+type: 'live:pairing',
+sheetUrl: currentManualPairingSheetUrl,
+updates: [{ traineeName: traineeName, op: 'add', volName: volName, volPaired: trainee.volPaired }]
+});
 }
 
 updatePairingCardDOM(volName, 'VOLUNTEER');
 updatePairingCardDOM(traineeName, 'TRAINEE');
 updateGlobalUnpairedCount();
 
-triggerManualPairingPulse(sourceName, targetName, true);
+triggerManualPairingPulse(sourceName, targetName, true, false);
 triggerManualPairingSync();
 } else {
 showFlashMessage('pairingGlobalStatus', "Already paired!", 'error');
@@ -552,19 +639,29 @@ const cleanVolToRemove = volName.toLowerCase();
 currentVols = currentVols.filter(v => v.toLowerCase() !== cleanVolToRemove);
 trainee.volPaired = currentVols.join(', ');
 
-const updateIndex = pendingPairingUpdates.findIndex(u => u.traineeName === traineeName);
-if (updateIndex > -1) {
-pendingPairingUpdates[updateIndex].volPaired = trainee.volPaired;
-} else {
-pendingPairingUpdates.push({ traineeName: traineeName, volPaired: trainee.volPaired });
+queuePairingOp(traineeName, 'remove', volName, trainee.volPaired);
+
+if (typeof window.collabSend === 'function') {
+window.collabSend({
+type: 'live:pairing',
+sheetUrl: currentManualPairingSheetUrl,
+updates: [{ traineeName: traineeName, op: 'remove', volName: volName, volPaired: trainee.volPaired }]
+});
 }
 
 updatePairingCardDOM(volName, 'VOLUNTEER');
 updatePairingCardDOM(traineeName, 'TRAINEE');
 updateGlobalUnpairedCount();
 
-triggerManualPairingPulse(traineeName, volName, false);
+triggerManualPairingPulse(traineeName, volName, false, false);
 triggerManualPairingSync();
+
+if (typeof window.showToast === 'function') {
+window.showToast(`Unpaired ${volName} from ${traineeName}`, 'info', {
+    undoLabel: 'Undo',
+    onUndo: () => handleManualPairingDrop(volName, 'VOLUNTEER', traineeName)
+});
+}
 }
 
 function setManualPairingSyncButtonState(state) {
@@ -599,7 +696,7 @@ setManualPairingSyncButtonState('saving');
 if (manualPairingSyncTimeout) clearTimeout(manualPairingSyncTimeout);
 manualPairingSyncTimeout = setTimeout(() => {
 executeManualPairingSync();
-}, 800); 
+}, 250); 
 }
 
 async function executeManualPairingSync() {
@@ -610,6 +707,7 @@ isManualPairingSyncing = true;
 setManualPairingSyncButtonState('saving');
 
 const updatesToSync = [...pendingPairingUpdates];
+inFlightPairingUpdates = updatesToSync;
 pendingPairingUpdates = [];
 
 try {
@@ -624,10 +722,14 @@ throw new Error(res.message);
 console.error(e);
 setManualPairingSyncButtonState('error');
 updatesToSync.forEach(u => {
-const idx = pendingPairingUpdates.findIndex(p => p.traineeName === u.traineeName);
+const idx = pendingPairingUpdates.findIndex(p =>
+p.traineeName === u.traineeName &&
+String(p.volName || '').toLowerCase() === String(u.volName || '').toLowerCase()
+);
 if (idx === -1) pendingPairingUpdates.push(u);
 });
 } finally {
+inFlightPairingUpdates = [];
 isManualPairingSyncing = false;
 if (pendingPairingUpdates.length > 0) {
 triggerManualPairingSync();
@@ -638,15 +740,18 @@ triggerManualPairingSync();
 function startManualPairingPolling() {
 if (manualPairingPollInterval) clearInterval(manualPairingPollInterval);
 
+// Safety-net poller: paused automatically whenever WebSocket is connected!
 manualPairingPollInterval = setInterval(async () => {
+if (window.LiveSync && window.LiveSync.isWebSocketConnected) return;
 if (isManualPairingSyncing || (window.dndState && (window.dndState.el || window.dndState.isDragging))) return;
-if (pendingPairingUpdates.length > 0) return;
+if (hasLocalOrInFlightPairingUpdates()) return;
+if (document.hidden) return;
 
 const fetchStartTime = Date.now();
 
 try {
 const res = await apiCall('fetchManualPairingData', { sheetUrl: currentManualPairingSheetUrl });
-if(res.success && !isManualPairingSyncing && pendingPairingUpdates.length === 0) {
+if(res.success && !isManualPairingSyncing && !hasLocalOrInFlightPairingUpdates()) {
 if (lastPairingLocalChange > fetchStartTime) return;
 
 const newDataStr = JSON.stringify(res.data);
@@ -783,3 +888,245 @@ closeQuickPairModal();
 listEl.appendChild(li);
 });
 }
+
+// ==========================================
+// REAL-TIME COLLABORATIVE WEBSOCKET LISTENERS
+// ==========================================
+(function initPairingRealtimeListeners() {
+if (typeof window.collabOn !== 'function') return;
+
+// 1. Live Pairing Deltas from Collaborators
+window.collabOn('delta:pairing', (msg) => {
+if (msg.senderId && msg.senderId === window.collabClientId) return;
+if (!currentManualPairingSheetUrl || msg.sheetUrl !== currentManualPairingSheetUrl) return;
+if (!Array.isArray(msg.updates) || !manualPairingData || !manualPairingData.trainees) return;
+
+let anyChanged = false;
+msg.updates.forEach(u => {
+if (isPairingOpPendingOrInFlight(u.traineeName, u.volName)) return;
+const trainee = manualPairingData.trainees.find(t => t.name === u.traineeName);
+if (!trainee) return;
+
+let nextVolPaired;
+if (u.op && u.volName) {
+nextVolPaired = applyPairingDeltaToList(trainee.volPaired, u.op, u.volName);
+} else {
+nextVolPaired = u.volPaired != null ? String(u.volPaired).trim() : "";
+}
+if (trainee.volPaired === nextVolPaired) return;
+
+const oldVols = trainee.volPaired ? trainee.volPaired.split(/[,|\n]+/).map(v => v.trim()).filter(v => v) : [];
+const newVols = nextVolPaired ? nextVolPaired.split(/[,|\n]+/).map(v => v.trim()).filter(v => v) : [];
+trainee.volPaired = nextVolPaired;
+if (trainee.extra) trainee.extra.t_paired_vol = nextVolPaired;
+anyChanged = true;
+
+const allAffectedVols = new Set([...oldVols, ...newVols]);
+const isPaired = newVols.length >= oldVols.length;
+
+allAffectedVols.forEach(vName => {
+const matchedVol = (manualPairingData.volunteers || []).find(v => v.name.toLowerCase() === vName.toLowerCase());
+const canonicalVolName = matchedVol ? matchedVol.name : vName;
+updatePairingCardDOM(canonicalVolName, 'VOLUNTEER');
+triggerManualPairingPulse(u.traineeName, canonicalVolName, isPaired, true);
+});
+
+updatePairingCardDOM(u.traineeName, 'TRAINEE');
+});
+
+if (anyChanged) {
+updateGlobalUnpairedCount();
+const qpModal = document.getElementById('quickPairModal');
+if (qpModal && !qpModal.classList.contains('hidden')) {
+filterQuickPairList();
+}
+}
+});
+
+// 2. Live Gone Home / Attendance Deltas from Tracker
+window.collabOn('delta:commAttendance', (msg) => {
+if (!currentManualPairingSheetUrl || msg.sheetUrl !== currentManualPairingSheetUrl) return;
+if (!msg.multipleUpdates || !msg.multipleUpdates['__GONE_HOME__'] || !manualPairingData.trainees) return;
+
+let changed = false;
+msg.multipleUpdates['__GONE_HOME__'].forEach(item => {
+const trainee = manualPairingData.trainees.find(t => t.name === item.name);
+const nextGone = item.status === true || String(item.status).toLowerCase() === 'true';
+if (trainee && trainee.isGoneHome !== nextGone) {
+trainee.isGoneHome = nextGone;
+changed = true;
+updatePairingCardDOM(trainee.name, 'TRAINEE');
+if (trainee.volPaired) {
+const vols = trainee.volPaired.split(/[,|\n]+/).map(v => v.trim()).filter(v => v);
+vols.forEach(vName => {
+const matchedVol = (manualPairingData.volunteers || []).find(v => v.name.toLowerCase() === vName.toLowerCase());
+if (matchedVol) updatePairingCardDOM(matchedVol.name, 'VOLUNTEER');
+});
+}
+}
+});
+if (changed) {
+updateGlobalUnpairedCount();
+}
+});
+
+// 3. Live Grouping Deltas Reflected on Pairing Cards
+window.collabOn('delta:grouping', (msg) => {
+if (!currentManualPairingSheetUrl || msg.sheetUrl !== currentManualPairingSheetUrl) return;
+if (!Array.isArray(msg.updates) || !manualPairingData.trainees) return;
+
+msg.updates.forEach(u => {
+if (u.role === 'TRAINEE' && u.group !== undefined) {
+const trainee = manualPairingData.trainees.find(t => t.name === u.name);
+if (trainee && String(trainee.group || '') !== String(u.group || '')) {
+trainee.group = u.group;
+if (trainee.extra) trainee.extra.t_group = u.group;
+updatePairingCardDOM(trainee.name, 'TRAINEE');
+}
+}
+});
+});
+
+// 4. Live Person Details / Attendance Updates
+window.collabOn('delta:personAttendance', (msg) => {
+if (!currentManualPairingSheetUrl || msg.sheetUrl !== currentManualPairingSheetUrl) return;
+if (!manualPairingData) return;
+
+const targetName = msg.targetName;
+const data = msg.data || {};
+const role = String(msg.personType || msg.role || '').toUpperCase();
+if (!targetName || !role) return;
+const normName = String(targetName).toLowerCase().trim();
+
+let attVal = undefined;
+for (const k in data) {
+const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+if (cleanK.includes('attending')) attVal = String(data[k]).toLowerCase().trim();
+}
+
+if (role === 'TRAINEE') {
+let person = (manualPairingData.trainees || []).find(p => p.name.toLowerCase().trim() === normName);
+let changed = false;
+if (!person && attVal === 'y') {
+person = {
+name: targetName,
+role: 'TRAINEE',
+caregivers: 0,
+attending: 'y',
+volPaired: '',
+project: '',
+group: '',
+isGoneHome: false,
+extra: { role: 'TRAINEE' }
+};
+manualPairingData.trainees.push(person);
+changed = true;
+}
+if (person) {
+if (!person.extra) person.extra = {};
+for (const k in data) {
+const val = data[k];
+const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+if (cleanK.includes('attending')) {
+const nextAtt = String(val).toLowerCase().trim();
+if (person.attending !== nextAtt) { person.attending = nextAtt; changed = true; }
+person.isAttendingN = nextAtt === 'n';
+person.isAttendingUnknown = nextAtt === '';
+if (nextAtt === 'n' && person.volPaired) { person.volPaired = ''; changed = true; }
+} else if (cleanK.includes('caregiver')) {
+const cg = parseInt(val, 10) || 0;
+if (person.caregivers !== cg) { person.caregivers = cg; changed = true; }
+} else if (cleanK.includes('group')) {
+const grp = String(val || '').trim();
+if (String(person.group || '') !== grp) { person.group = grp; person.extra.t_group = grp; changed = true; }
+} else if (cleanK.includes('vol') && cleanK.includes('paired')) {
+const vp = String(val || '').trim();
+if (String(person.volPaired || '') !== vp) { person.volPaired = vp; person.extra.t_paired_vol = vp; changed = true; }
+} else if (cleanK.includes('remark')) {
+if (person.extra.remark !== val) { person.extra.remark = val; person.extra.remarks = val; changed = true; }
+} else if (cleanK.includes('11') || cleanK.includes('oneonone')) {
+if (person.extra.t_one_on_one !== val) { person.extra.t_one_on_one = val; changed = true; }
+}
+person.extra[k] = val;
+}
+if (changed) {
+renderManualPairings();
+updateGlobalUnpairedCount();
+}
+}
+} else if (role === 'VOLUNTEER') {
+if (attVal === 'n' || attVal === '') {
+const beforeLen = (manualPairingData.volunteers || []).length;
+manualPairingData.volunteers = (manualPairingData.volunteers || []).filter(v => v.name.toLowerCase().trim() !== normName);
+let changed = manualPairingData.volunteers.length !== beforeLen;
+if (attVal === 'n') {
+(manualPairingData.trainees || []).forEach(t => {
+if (t.volPaired && t.volPaired.toLowerCase().includes(normName)) {
+const vols = t.volPaired.split(/[,|\n]+/).map(x => x.trim()).filter(x => x);
+t.volPaired = vols.filter(x => x.toLowerCase() !== normName).join(', ');
+if (t.extra) t.extra.t_paired_vol = t.volPaired;
+changed = true;
+}
+});
+}
+if (changed) {
+renderManualPairings();
+updateGlobalUnpairedCount();
+}
+} else {
+let person = (manualPairingData.volunteers || []).find(v => v.name.toLowerCase().trim() === normName);
+let changed = false;
+if (!person && attVal === 'y') {
+person = { name: targetName, role: 'VOLUNTEER', project: data['Project'] || '', groupIC: false, meetIC: false, dismissIC: false, extra: { role: 'VOLUNTEER' } };
+manualPairingData.volunteers.push(person);
+changed = true;
+}
+if (person) {
+if (!person.extra) person.extra = {};
+for (const k in data) {
+const val = data[k];
+const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+if (cleanK.includes('project') && val) { if (person.project !== val) { person.project = val; changed = true; } }
+else if (cleanK.includes('meetinglocation')) { person.extra.v_meet = val; changed = true; }
+else if (cleanK.includes('dismissallocation')) { person.extra.v_dismiss = val; changed = true; }
+else if (cleanK.includes('remark')) { person.extra.remark = val; person.extra.remarks = val; changed = true; }
+person.extra[k] = val;
+}
+if (changed) renderManualPairings();
+}
+}
+}
+});
+
+// 5. Full Authoritative Pairing State Broadcast
+window.collabOn('state:pairingData', (msg) => {
+if (!currentManualPairingSheetUrl || msg.sheetUrl !== currentManualPairingSheetUrl) return;
+if (!msg.data || isManualPairingSyncing || hasLocalOrInFlightPairingUpdates()) return;
+if (window.dndState && (window.dndState.el || window.dndState.isDragging)) return;
+if (!document.getElementById('dnd-source-pool')) return;
+
+const newDataStr = JSON.stringify(msg.data);
+const oldDataStr = JSON.stringify(manualPairingData);
+if (newDataStr !== oldDataStr) {
+manualPairingData = msg.data;
+renderManualPairings();
+}
+});
+
+// 6. Reconnect / Wake Sync
+window.collabOn('collab:reconnected', () => {
+if (currentManualPairingSheetUrl && document.getElementById('dnd-source-pool')) {
+if (typeof window.collabSetContext === 'function') {
+window.collabSetContext('pairing', currentManualPairingSheetUrl);
+}
+if (!isManualPairingSyncing && !hasLocalOrInFlightPairingUpdates()) {
+apiCall('fetchManualPairingData', { sheetUrl: currentManualPairingSheetUrl }).then(res => {
+if (res && res.success && !isManualPairingSyncing && !hasLocalOrInFlightPairingUpdates()) {
+manualPairingData = res.data;
+renderManualPairings();
+}
+});
+}
+}
+});
+})();

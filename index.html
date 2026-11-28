@@ -9,6 +9,7 @@
 <title>MINDS MYG Outings Organiser</title>
 <base target="_top">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/icon-192.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
@@ -23,6 +24,7 @@ theme: { extend: { colors: { primary: '#3b82f6' } } }
 <script src="backend/config.js"></script>
 <script src="frontend/js/state.js"></script>
 <script src="frontend/js/api.js"></script>
+<script src="frontend/js/live-sync.js"></script>
 <script src="frontend/js/ui.js"></script>
 <script src="frontend/js/auth.js"></script>
 <script src="frontend/js/main.js"></script>
@@ -46,11 +48,11 @@ theme: { extend: { colors: { primary: '#3b82f6' } } }
 </div>
 </div>
 <!-- Global Actions -->
-<div class="flex items-center gap-1.5 shrink-0 pl-2 ml-auto border-l border-gray-200 dark:border-zinc-700">
-<button onclick="refreshApp()" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors group flex items-center p-1" title="Force Refresh Data & App">
+<div class="flex items-center gap-1 md:gap-1.5 shrink-0 pl-1.5 md:pl-2 ml-auto border-l border-gray-200 dark:border-zinc-700">
+<button onclick="refreshApp()" aria-label="Force Refresh Data & App" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors group flex items-center p-1" title="Force Refresh Data & App">
  <i id="refreshIcon" class="fa-solid fa-arrows-rotate text-sm md:text-base group-hover:text-primary transition-transform"></i>
 </button>
-<button onclick="toggleTheme()" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors flex items-center p-1" title="Toggle Theme">
+<button onclick="toggleTheme()" aria-label="Toggle Theme" class="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-[10px] md:text-xs transition-colors flex items-center p-1" title="Toggle Theme">
  <span class="text-sm md:text-base leading-none">🌗</span>
 </button>
 </div>
@@ -116,7 +118,8 @@ theme: { extend: { colors: { primary: '#3b82f6' } } }
 </main>
 
 <script>
-function populateHomeSelectors(data) {
+function populateHomeSelectors(rawData) {
+const data = window.filterActiveOutings ? window.filterActiveOutings(rawData) : rawData;
 const volSelect = document.getElementById('volunteerEventSelect');
 const trackerSelect = document.getElementById('trackerEventSelect');
 if(!volSelect || !trackerSelect) return;
@@ -152,14 +155,19 @@ const localDataStr = localStorage.getItem('myg_sheetList');
 if(localDataStr) {
  try {
      const parsed = JSON.parse(localDataStr);
-     populateHomeSelectors(parsed);
+     const filtered = window.filterActiveOutings ? window.filterActiveOutings(parsed) : parsed;
+     if (JSON.stringify(filtered) !== localDataStr) {
+         localStorage.setItem('myg_sheetList', JSON.stringify(filtered));
+     }
+     populateHomeSelectors(filtered);
  } catch(e) {}
 }
 
 apiCall('getRecentOutingSheets', null).then(res => {
  if(res.success) {
-     localStorage.setItem('myg_sheetList', JSON.stringify(res.data));
-     populateHomeSelectors(res.data);
+     const filtered = window.filterActiveOutings ? window.filterActiveOutings(res.data) : res.data;
+     localStorage.setItem('myg_sheetList', JSON.stringify(filtered));
+     populateHomeSelectors(filtered);
      isHydrated = true;
  }
 });

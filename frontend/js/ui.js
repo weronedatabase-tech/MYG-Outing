@@ -16,6 +16,9 @@ window.handleNavBack = function() {
 };
 
 async function refreshApp() { 
+ if (window._isRefreshingApp) return;
+ window._isRefreshingApp = true;
+
  const icon = document.getElementById('refreshIcon'); 
  if(icon) icon.classList.add('fa-spin'); 
  
@@ -24,17 +27,24 @@ async function refreshApp() {
      showOverlay('loading', 'Syncing Google Drive & Purging Cache...');
  }
 
- // 1. Save admin login session and user theme
+ // 1. Save admin login session, user theme, and per-tab collaboration ID
  const adminKey = localStorage.getItem('adminKey');
  const theme = localStorage.getItem('theme');
+ let collabTabId = window.collabClientId || null;
+ try {
+     collabTabId = sessionStorage.getItem('myg_collab_tab_id') || collabTabId;
+ } catch(e) {}
 
  // 2. Full frontend cache purge (wipe localStorage & sessionStorage)
  try { localStorage.clear(); } catch(e) {}
  try { sessionStorage.clear(); } catch(e) {}
 
- // Restore admin login session and theme
+ // Restore admin login session, theme, and per-tab collaboration ID
  if (adminKey) localStorage.setItem('adminKey', adminKey);
  if (theme) localStorage.setItem('theme', theme);
+ if (collabTabId) {
+     try { sessionStorage.setItem('myg_collab_tab_id', collabTabId); } catch(e) {}
+ }
 
  // 3. Determine if a specific sheet is open so we can bust its specific cache too
  let targetSheetUrl = null;
@@ -73,7 +83,12 @@ async function refreshApp() {
      } catch(e) {}
  }
 
- // 6. Hard reload with cache-busting timestamp to load latest app version
+ // 6. Cleanly disconnect live WebSocket session before reloading so the live counter never inflates
+ if (typeof window.collabDisconnect === 'function') {
+     window.collabDisconnect('refresh');
+ }
+
+ // 7. Hard reload with cache-busting timestamp to load latest app version
  const cleanUrl = new URL(window.location.href);
  cleanUrl.searchParams.set('_v', Date.now());
  window.location.href = cleanUrl.toString();
@@ -99,8 +114,40 @@ function togglePasswordVisibility(inputId) {
 }
 
 // --- OVERLAY LOGIC ---
+function ensureFullPageOverlay() {
+ let overlay = document.getElementById('fullPageOverlay');
+ if (overlay) return overlay;
+ overlay = document.createElement('div');
+ overlay.id = 'fullPageOverlay';
+ overlay.className = 'fixed inset-0 z-[110] bg-white/90 dark:bg-black/95 backdrop-blur-sm hidden flex flex-col items-center justify-center p-4 transition-opacity duration-300';
+ overlay.innerHTML = `
+  <div id="overlayLoading" class="flex flex-col items-center">
+   <div class="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+   <h2 id="overlayLoadingText" class="text-xl font-bold text-gray-900 dark:text-white animate-pulse">Saving...</h2>
+  </div>
+  <div id="overlaySuccess" class="hidden flex flex-col items-center text-center scale-100 transition-transform">
+   <div class="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(34,197,94,0.4)]">
+    <i class="fa-solid fa-check text-4xl text-white"></i>
+   </div>
+   <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Success!</h2>
+   <p id="overlaySuccessText" class="text-gray-600 dark:text-gray-300 mb-8 max-w-xs text-sm">Operation completed.</p>
+   <button onclick="closeOverlay()" class="bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-900 dark:text-white font-bold py-3 px-10 rounded-xl border border-gray-300 dark:border-zinc-700 shadow-lg transition-all transform hover:scale-105">Close</button>
+  </div>
+  <div id="overlayError" class="hidden flex flex-col items-center text-center">
+   <div class="w-20 h-20 bg-red-500 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(239,68,68,0.4)]">
+    <i class="fa-solid fa-xmark text-4xl text-white"></i>
+   </div>
+   <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Error</h2>
+   <p id="overlayErrorText" class="text-red-500 dark:text-red-400 mb-8 max-w-xs text-sm">Something went wrong.</p>
+   <button onclick="closeOverlay()" class="bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-900 dark:text-white font-bold py-3 px-10 rounded-xl border border-gray-300 dark:border-zinc-700 shadow-lg transition-all transform hover:scale-105">Close</button>
+  </div>
+ `;
+ document.body.appendChild(overlay);
+ return overlay;
+}
+
 function showOverlay(type, msg) {
- const overlay = document.getElementById('fullPageOverlay');
+ const overlay = ensureFullPageOverlay();
  if(!overlay) return;
  overlay.classList.remove('hidden');
 
@@ -134,7 +181,12 @@ function closeOverlay() {
 
 function showFlashMessage(elementId, message, type) { 
  const el = document.getElementById(elementId); 
- if(!el) return;
+ if(!el) {
+     if (typeof window.showToast === 'function') {
+         window.showToast(message, type === 'error' ? 'error' : 'success');
+     }
+     return;
+ }
  el.innerText = message; 
  el.classList.remove('hidden', 'bg-green-100', 'dark:bg-green-900/30', 'text-green-600', 'dark:text-green-400', 'border-green-200', 'dark:border-green-800', 'bg-red-100', 'dark:bg-red-900/30', 'text-red-600', 'dark:text-red-400', 'border-red-200', 'dark:border-red-800'); 
  if (type === 'success') { 
@@ -385,8 +437,10 @@ window.selectGlobalGroup = function(g) {
  window.closeGlobalGroupSelect();
 };
 
-window.selectGlobalNewGroup = function() {
- const g = prompt("Enter new Group Name or Number:");
+window.selectGlobalNewGroup = async function() {
+ const g = typeof window.showCustomPrompt === 'function'
+     ? await window.showCustomPrompt({ title: 'New Group', placeholder: 'e.g. 6 or A', confirmText: 'Add Group' })
+     : prompt("Enter new Group Name or Number:");
  if (g && g.trim()) {
      const clean = g.trim();
      if (!window.extractedActiveGroups.includes(clean)) {
@@ -425,7 +479,7 @@ function showPersonInfo(personObj) {
  let htmlContent = "";
 
  const nameStr = personObj.name || '-';
- const htmlSafeNameStr = nameStr.replace(/"/g, '&quot;');
+ const htmlSafeNameStr = window.escapeHtml(nameStr);
  const roleBadge = role === 'TRAINEE' 
  ? `<span class="bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 px-1.5 py-0.5 rounded text-[10px] uppercase font-black tracking-wider shadow-sm">Trainee</span>`
  : `<span class="bg-teal-50 text-teal-600 border border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800 px-1.5 py-0.5 rounded text-[10px] uppercase font-black tracking-wider shadow-sm">Volunteer</span>`;
@@ -572,13 +626,42 @@ function showPersonInfo(personObj) {
      const dietary = ex.t_dietary || '-';
      const cgContact = ex.m_cg_contact || '-';
 
+     // Extract phone numbers for click-to-call / WhatsApp actions
+     let cgActionsHtml = '';
+     if (cgContact && cgContact !== '-' && cgContact.trim() !== '') {
+         const phoneMatches = cgContact.match(/(?:\+?\d[\d\s-]{6,14}\d)/g) || [];
+         const uniquePhones = [];
+         const seenDigits = new Set();
+         phoneMatches.forEach(raw => {
+             const digits = raw.replace(/[^\d+]/g, '');
+             const pureDigits = digits.replace(/\D/g, '');
+             if (pureDigits.length >= 8 && !seenDigits.has(pureDigits)) {
+                 seenDigits.add(pureDigits);
+                 const telHref = digits.startsWith('+') ? digits : (pureDigits.length === 8 ? `+65${pureDigits}` : `+${pureDigits}`);
+                 const waDigits = telHref.replace(/\D/g, '');
+                 uniquePhones.push({ display: raw.trim(), telHref, waDigits });
+             }
+         });
+         const jsSafeContact = window.escapeJsAttr(cgContact);
+         const phoneBtns = uniquePhones.map(ph => `
+             <a href="tel:${window.escapeHtml(ph.telHref)}" class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-green-100 hover:bg-green-200 dark:bg-green-900/40 dark:hover:bg-green-900/60 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800 transition-colors" title="Call ${window.escapeHtml(ph.display)}"><i class="fa-solid fa-phone"></i> Call${uniquePhones.length > 1 ? ' ' + window.escapeHtml(ph.display) : ''}</a>
+             <a href="https://wa.me/${window.escapeHtml(ph.waDigits)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors" title="WhatsApp ${window.escapeHtml(ph.display)}"><i class="fa-brands fa-whatsapp"></i> WhatsApp</a>
+         `).join('');
+         cgActionsHtml = `
+             <div class="flex flex-wrap gap-1.5 mt-2">
+                 ${phoneBtns}
+                 <button type="button" onclick="window.copyCgContact('${jsSafeContact}')" class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-zinc-700 transition-colors"><i class="fa-regular fa-copy"></i> Copy</button>
+             </div>
+         `;
+     }
+
      if (meetFetch !== '-' && meetFetch !== '') {
          detailsHtml += `
          <div class="flex items-start gap-3 bg-gray-50 dark:bg-zinc-800/50 p-2.5 rounded-lg border border-gray-100 dark:border-zinc-800">
              <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-500 shrink-0 mt-0.5"><i class="fa-solid fa-car-side"></i></div>
              <div class="flex-1 min-w-0">
                  <div class="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-0.5">Meeting Fetch</div>
-                 <div class="font-medium text-gray-900 dark:text-white break-words whitespace-pre-wrap">${meetFetch}</div>
+                 <div class="font-medium text-gray-900 dark:text-white break-words whitespace-pre-wrap">${window.escapeHtml(meetFetch)}</div>
              </div>
          </div>`;
      }
@@ -589,7 +672,7 @@ function showPersonInfo(personObj) {
              <div class="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-500 shrink-0 mt-0.5"><i class="fa-solid fa-car-side"></i></div>
              <div class="flex-1 min-w-0">
                  <div class="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-0.5">Dismissal Fetch</div>
-                 <div class="font-medium text-gray-900 dark:text-white break-words whitespace-pre-wrap">${disFetch}</div>
+                 <div class="font-medium text-gray-900 dark:text-white break-words whitespace-pre-wrap">${window.escapeHtml(disFetch)}</div>
              </div>
          </div>`;
      }
@@ -599,7 +682,7 @@ function showPersonInfo(personObj) {
          <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-500 shrink-0 mt-0.5"><i class="fa-solid fa-utensils"></i></div>
          <div class="flex-1 min-w-0">
              <div class="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-0.5">Dietary Restrictions</div>
-             <div class="font-medium text-gray-900 dark:text-white break-words whitespace-pre-wrap">${dietary}</div>
+             <div class="font-medium text-gray-900 dark:text-white break-words whitespace-pre-wrap">${window.escapeHtml(dietary)}</div>
          </div>
      </div>
 
@@ -607,7 +690,8 @@ function showPersonInfo(personObj) {
          <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-500 shrink-0 mt-0.5"><i class="fa-solid fa-phone"></i></div>
          <div class="flex-1 min-w-0">
              <div class="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-0.5">CG Contact</div>
-             <div class="font-medium text-gray-900 dark:text-white break-words whitespace-pre-wrap">${cgContact}</div>
+             <div class="font-medium text-gray-900 dark:text-white break-words whitespace-pre-wrap">${window.escapeHtml(cgContact)}</div>
+             ${cgActionsHtml}
          </div>
      </div>
      `;
@@ -624,7 +708,7 @@ function showPersonInfo(personObj) {
          <i class="fa-solid fa-triangle-exclamation text-yellow-600 dark:text-yellow-500 text-sm"></i>
          <span class="font-black text-yellow-800 dark:text-yellow-400 text-[10px] uppercase tracking-wider">Remarks</span>
      </div>
-     <p class="text-yellow-900 dark:text-yellow-100 text-sm whitespace-pre-wrap font-medium leading-relaxed">${remarks}</p>
+     <p class="text-yellow-900 dark:text-yellow-100 text-sm whitespace-pre-wrap font-medium leading-relaxed">${window.escapeHtml(remarks)}</p>
      </div>
      `;
  }
@@ -639,7 +723,7 @@ function showPersonInfo(personObj) {
                  <i class="fa-solid fa-star text-blue-600 dark:text-blue-500 text-sm"></i>
                  <span class="font-black text-blue-800 dark:text-blue-400 text-[10px] uppercase tracking-wider">Pairing Considerations</span>
              </div>
-             <p class="text-blue-900 dark:text-blue-100 text-sm whitespace-pre-wrap font-medium leading-relaxed">${String(ex.t_one_on_one).trim()}</p>
+             <p class="text-blue-900 dark:text-blue-100 text-sm whitespace-pre-wrap font-medium leading-relaxed">${window.escapeHtml(String(ex.t_one_on_one).trim())}</p>
          </div>
          `;
      }
@@ -671,6 +755,18 @@ function showPersonInfo(personObj) {
      window.initInfoPairing(pairedVal, sheetUrl);
  }
 
+ window.infoEditInitialValues = {
+     att: document.getElementById('infoEditAttending')?.value ?? '',
+     meet: document.getElementById('infoEditMeeting')?.value ?? '',
+     dis: document.getElementById('infoEditDismissal')?.value ?? '',
+     group: document.getElementById('infoEditGroup')?.value.trim() ?? null,
+     pairing: document.getElementById('infoEditPairingHidden')?.value.trim() ?? null
+ };
+
+ if (typeof window.collabEmitFocus === 'function') {
+     window.collabEmitFocus({ name: nameStr, role: role, action: 'editing' });
+ }
+
  const infoModal = document.getElementById('personInfoModal');
  if(infoModal) infoModal.classList.remove('hidden');
 }
@@ -679,7 +775,161 @@ function closePersonInfoModal() {
  const infoModal = document.getElementById('personInfoModal');
  if(infoModal) infoModal.classList.add('hidden');
  window.lastPersonObj = null;
+ if (typeof window.collabEmitFocus === 'function') {
+     window.collabEmitFocus(null);
+ }
 }
+
+window.applyLocalOrRemotePersonUpdate = function(sheetUrl, roleRaw, targetName, dataObj, isRemote = false) {
+ if (!targetName || !dataObj) return;
+ const role = String(roleRaw || 'trainee').toUpperCase();
+ const normName = String(targetName).toLowerCase().trim();
+
+ const att = dataObj["Attending (Y/N)"] !== undefined ? String(dataObj["Attending (Y/N)"]).toLowerCase().trim() : undefined;
+ const meet = dataObj["Meeting Location"] !== undefined ? String(dataObj["Meeting Location"]).trim() : undefined;
+ const dis = dataObj["Dismissal Location"] !== undefined ? String(dataObj["Dismissal Location"]).trim() : undefined;
+ const group = dataObj["Outing Grouping"] !== undefined ? String(dataObj["Outing Grouping"]).trim() : (dataObj["Group"] !== undefined ? String(dataObj["Group"]).trim() : undefined);
+ const pairing = dataObj["Vol Paired"] !== undefined ? String(dataObj["Vol Paired"]).trim() : undefined;
+
+ // 1. Live Tracker (commAttData)
+ if (typeof commAttData !== 'undefined' && commAttData && Array.isArray(commAttData.participants)) {
+     if (!sheetUrl || !currentCommAttSheetUrl || sheetUrl === currentCommAttSheetUrl) {
+         if (role === 'TRAINEE') {
+             let p = commAttData.participants.find(x => x.name.toLowerCase().trim() === normName);
+             if (att === 'n' || att === '') {
+                 if (p) {
+                     commAttData.participants = commAttData.participants.filter(x => x.name.toLowerCase().trim() !== normName);
+                     if (typeof renderCommAttFilters === 'function') renderCommAttFilters();
+                     if (typeof renderCommAttLists === 'function') renderCommAttLists();
+                     if (typeof renderBusLists === 'function' && !document.getElementById('busTrackerModal')?.classList.contains('hidden')) renderBusLists();
+                 }
+             } else {
+                 let wasAdded = false;
+                 if (!p && (att === 'y' || att === undefined)) {
+                     p = {
+                         name: targetName,
+                         group: group || "",
+                         caregivers: 0,
+                         volPaired: pairing || "",
+                         meetingLoc: meet || "",
+                         dismissalLoc: dis || "",
+                         extra: { role: 'TRAINEE' }
+                     };
+                     commAttData.participants.push(p);
+                     wasAdded = true;
+                 }
+                 if (p) {
+                     if (group !== undefined) { p.group = group; if (p.extra) p.extra.t_group = group; }
+                     if (pairing !== undefined) { p.volPaired = pairing; if (p.extra) p.extra.t_paired_vol = pairing; }
+                     if (meet !== undefined) { p.meetingLoc = meet; if (p.extra) p.extra.t_meet = meet; }
+                     if (dis !== undefined) { p.dismissalLoc = dis; if (p.extra) p.extra.t_dismiss = dis; }
+                     if (typeof renderCommAttFilters === 'function') renderCommAttFilters();
+                     if (wasAdded) {
+                         if (typeof renderCommAttLists === 'function') renderCommAttLists();
+                     } else if (typeof updateCommAttCardDOM === 'function') {
+                         updateCommAttCardDOM(p.name, isRemote);
+                         if (typeof updateCommAttCountsDOM === 'function') updateCommAttCountsDOM();
+                     }
+                     if (typeof renderBusLists === 'function' && !document.getElementById('busTrackerModal')?.classList.contains('hidden')) {
+                         renderBusLists();
+                     }
+                 }
+             }
+         } else if (role === 'VOLUNTEER' && att === 'n') {
+             let affected = [];
+             commAttData.participants.forEach(t => {
+                 if (t.volPaired && t.volPaired.toLowerCase().includes(normName)) {
+                     const vols = t.volPaired.split(/[,|\n]+/).map(v => v.trim()).filter(v => v);
+                     t.volPaired = vols.filter(v => v.toLowerCase() !== normName).join(', ');
+                     affected.push(t.name);
+                 }
+             });
+             affected.forEach(tName => {
+                 if (typeof updateCommAttCardDOM === 'function') updateCommAttCardDOM(tName, isRemote);
+             });
+             if (affected.length > 0 && typeof updateCommAttCountsDOM === 'function') updateCommAttCountsDOM();
+         }
+     }
+ }
+
+ // 2. Manual Pairing (manualPairingData)
+ if (typeof manualPairingData !== 'undefined' && manualPairingData && Array.isArray(manualPairingData.trainees)) {
+     if (!sheetUrl || !currentManualPairingSheetUrl || sheetUrl === currentManualPairingSheetUrl) {
+         if (role === 'TRAINEE') {
+             let t = manualPairingData.trainees.find(x => x.name.toLowerCase().trim() === normName);
+             if (!t && att === 'y') {
+                 t = {
+                     name: targetName,
+                     role: 'TRAINEE',
+                     caregivers: 0,
+                     attending: 'y',
+                     volPaired: pairing || "",
+                     project: "",
+                     group: group || "",
+                     isGoneHome: false,
+                     extra: { role: 'TRAINEE' }
+                 };
+                 manualPairingData.trainees.push(t);
+             }
+             if (t) {
+                 if (att !== undefined) { t.attending = att; if (att === 'n') t.volPaired = ""; }
+                 if (group !== undefined) { t.group = group; if (t.extra) t.extra.t_group = group; }
+                 if (pairing !== undefined && att !== 'n') { t.volPaired = pairing; if (t.extra) t.extra.t_paired_vol = pairing; }
+                 if (meet !== undefined && t.extra) t.extra.t_meet = meet;
+                 if (dis !== undefined && t.extra) t.extra.t_dismiss = dis;
+                 if (typeof renderManualPairings === 'function') renderManualPairings();
+             }
+         } else if (role === 'VOLUNTEER') {
+             let v = manualPairingData.volunteers.find(x => x.name.toLowerCase().trim() === normName);
+             if (att === 'n' || att === '') {
+                 manualPairingData.volunteers = manualPairingData.volunteers.filter(x => x.name.toLowerCase().trim() !== normName);
+                 if (att === 'n') {
+                     manualPairingData.trainees.forEach(t => {
+                         if (t.volPaired && t.volPaired.toLowerCase().includes(normName)) {
+                             const vols = t.volPaired.split(/[,|\n]+/).map(x => x.trim()).filter(x => x);
+                             t.volPaired = vols.filter(x => x.toLowerCase() !== normName).join(', ');
+                         }
+                     });
+                 }
+             } else {
+                 if (!v) {
+                     v = { name: targetName, role: 'VOLUNTEER', project: dataObj["Project"] || "", extra: { role: 'VOLUNTEER' } };
+                     manualPairingData.volunteers.push(v);
+                 }
+                 if (meet !== undefined && v.extra) v.extra.v_meet = meet;
+                 if (dis !== undefined && v.extra) v.extra.v_dismiss = dis;
+                 if (group !== undefined && v.extra) v.extra.v_group = group;
+             }
+             if (typeof renderManualPairings === 'function') renderManualPairings();
+         }
+     }
+ }
+
+ // 3. Manual Grouping (groupingData)
+ if (typeof groupingData !== 'undefined' && groupingData && Array.isArray(groupingData.trainees)) {
+     if (!sheetUrl || !currentGroupingSheetUrl || sheetUrl === currentGroupingSheetUrl) {
+         if (role === 'TRAINEE') {
+             let t = groupingData.trainees.find(x => x.name.toLowerCase().trim() === normName);
+             if (t) {
+                 if (att !== undefined) t.attending = att;
+                 if (group !== undefined) t.group = group;
+                 if (pairing !== undefined) t.volPaired = pairing;
+                 if (meet !== undefined && t.extra) t.extra.t_meet = meet;
+                 if (dis !== undefined && t.extra) t.extra.t_dismiss = dis;
+                 if (typeof renderGroupingList === 'function') renderGroupingList();
+             }
+         } else if (role === 'VOLUNTEER') {
+             let v = groupingData.volunteers.find(x => x.name.toLowerCase().trim() === normName);
+             if (v) {
+                 if (meet !== undefined && v.extra) v.extra.v_meet = meet;
+                 if (dis !== undefined && v.extra) v.extra.v_dismiss = dis;
+                 if (group !== undefined && v.extra) v.extra.v_group = group;
+             }
+             if (typeof renderGroupingList === 'function') renderGroupingList();
+         }
+     }
+ }
+};
 
 function submitIntegratedQuickEdit() {
  const btn = document.getElementById('infoSaveBtn');
@@ -702,65 +952,94 @@ function submitIntegratedQuickEdit() {
  btn.disabled = true;
  btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Saving...`;
 
+ const initial = window.infoEditInitialValues || {};
  const payloadData = {
-     "Name": name,
-     "Attending (Y/N)": att,
-     "Meeting Location": meet,
-     "Dismissal Location": dis
+     "Name": name
  };
 
- if (group !== null) {
+ if (initial.att === undefined || att !== initial.att) {
+     payloadData["Attending (Y/N)"] = att;
+ }
+ if (initial.meet === undefined || meet !== initial.meet) {
+     payloadData["Meeting Location"] = meet;
+ }
+ if (initial.dis === undefined || dis !== initial.dis) {
+     payloadData["Dismissal Location"] = dis;
+ }
+ if (group !== null && (initial.group === undefined || group !== initial.group)) {
      if (role.toLowerCase() === 'trainee') payloadData["Outing Grouping"] = group;
      else payloadData["Group"] = group; 
  }
-
- if (pairing !== null && role.toLowerCase() === 'trainee') {
+ if (pairing !== null && role.toLowerCase() === 'trainee' && (initial.pairing === undefined || pairing !== initial.pairing)) {
      payloadData["Vol Paired"] = pairing;
+ }
+
+ const hasFieldChanges = Object.keys(payloadData).length > 1;
+ if (!hasFieldChanges) {
+     closePersonInfoModal();
+     btn.disabled = false;
+     btn.innerHTML = `<i class="fa-solid fa-save"></i> Save Changes`;
+     return;
  }
 
  const payload = { sheetUrl: sheetUrl, type: role.toLowerCase(), data: payloadData, targetName: name };
 
+ // 1. Optimistically apply locally & broadcast via WebSocket in 0ms
+ window.applyLocalOrRemotePersonUpdate(sheetUrl, role, name, payloadData, false);
+ if (typeof window.collabSend === 'function') {
+     window.collabSend({
+         type: 'live:personAttendance',
+         sheetUrl: sheetUrl,
+         role: role.toLowerCase(),
+         personType: role.toLowerCase(),
+         targetName: name,
+         data: payloadData
+     });
+ }
+
+ btn.innerHTML = `<i class="fa-solid fa-check"></i> Saved!`;
+ btn.classList.replace('bg-blue-600', 'bg-green-600');
+ btn.classList.replace('border-blue-600', 'border-green-600');
+ btn.classList.replace('hover:bg-blue-700', 'hover:bg-green-700');
+
+ setTimeout(() => {
+     closePersonInfoModal();
+     btn.disabled = false;
+     btn.innerHTML = `<i class="fa-solid fa-save"></i> Save Changes`;
+     btn.classList.replace('bg-green-600', 'bg-blue-600');
+     btn.classList.replace('hover:bg-green-700', 'hover:bg-blue-700');
+     btn.classList.replace('border-green-600', 'border-blue-600');
+ }, 350);
+
+ // 2. Persist in background
  apiCall('submitAttendanceData', payload).then(res => {
-     if(res.success) {
-         btn.innerHTML = `<i class="fa-solid fa-check"></i> Saved!`;
-         btn.classList.replace('bg-blue-600', 'bg-green-600');
-         btn.classList.replace('border-blue-600', 'border-green-600');
-         btn.classList.replace('hover:bg-blue-700', 'hover:bg-green-700');
-         
-         setTimeout(() => {
-             closePersonInfoModal();
-             btn.disabled = false;
-             btn.innerHTML = `<i class="fa-solid fa-save"></i> Save Changes`;
-             btn.classList.replace('bg-green-600', 'bg-blue-600');
-             btn.classList.replace('hover:bg-green-700', 'hover:bg-blue-700');
-             btn.classList.replace('border-green-600', 'border-blue-600');
-             
-             if (typeof manualSyncCommAttendance === 'function') {
-                 manualSyncCommAttendance();
-             } else if (typeof manualSyncManualPairing === 'function') {
-                 manualSyncManualPairing();
-             } else if (typeof manualSyncGrouping === 'function') {
-                 manualSyncGrouping();
-             }
-         }, 1500);
-     } else {
-         btn.disabled = false;
-         btn.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Save Failed`;
-         alert("Error: " + res.message);
+     if(!res || !res.success) {
+         console.error("Quick Edit sync error:", res ? res.message : "Unknown");
      }
  });
 }
+
+window.copyCgContact = function(text) {
+ if (!text) return;
+ navigator.clipboard.writeText(text).then(() => {
+     if (typeof window.showToast === 'function') window.showToast('CG Contact copied!', 'success');
+ }).catch(() => {
+     if (typeof window.showToast === 'function') window.showToast('Unable to copy contact.', 'error');
+ });
+};
 
 window.initInfoPairing = function(initialStr, sheetUrl) {
  window.infoPairingVols = initialStr ? initialStr.split(/[,|\n]+/).map(s=>s.trim()).filter(s=>s) : [];
  window.updateInfoPairingUI();
  
- // Pulls robust architectural data limiting options to active volunteers
- apiCall('fetchManualPairingData', { sheetUrl: sheetUrl }).then(res => {
-     if(res.success && res.data && res.data.volunteers) {
-         window.infoAllAvailableVols = res.data.volunteers.map(v => v.name);
-     }
- });
+ // Only fetch full volunteer list when authenticated as Admin (pairing edit is Admin-only)
+ if (isAdminAuthenticated && sheetUrl) {
+     apiCall('fetchManualPairingData', { sheetUrl: sheetUrl }).then(res => {
+         if(res && res.success && res.data && res.data.volunteers) {
+             window.infoAllAvailableVols = res.data.volunteers.map(v => v.name);
+         }
+     });
+ }
 };
 
 window.filterInfoPairing = function() {
@@ -821,8 +1100,8 @@ window.updateInfoPairingUI = function() {
  if(!tags || !hidden) return;
 
  tags.innerHTML = window.infoPairingVols.map(v => {
-     const jsSafeVol = v.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '&quot;');
-     return `<span class="bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-900/50 dark:text-teal-300 dark:border-teal-700/50 px-2 py-0.5 rounded text-xs flex items-center gap-1">${v} <i class="fa-solid fa-xmark cursor-pointer hover:text-red-500 ml-1" onclick="window.removeInfoPairing('${jsSafeVol}')"></i></span>`;
+     const jsSafeVol = window.escapeJsAttr(v);
+     return `<span class="bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-900/50 dark:text-teal-300 dark:border-teal-700/50 px-2 py-0.5 rounded text-xs flex items-center gap-1">${window.escapeHtml(v)} <i class="fa-solid fa-xmark cursor-pointer hover:text-red-500 ml-1" onclick="window.removeInfoPairing('${jsSafeVol}')"></i></span>`;
  }).join('');
 
  hidden.value = window.infoPairingVols.join(', ');
